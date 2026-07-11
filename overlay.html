@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Extension Overlay — Rotation Radar</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0B0F14;
+    --card: #141A22;
+    --card2: #1A222C;
+    --line: rgba(255,255,255,.08);
+    --text: #E9EEF4;
+    --dim: #8B97A5;
+    --rising: #30D158;
+    --rolling: #FF453A;
+    --unknown: #7D8590;
+    --accent: #64D2FF;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    padding: calc(env(safe-area-inset-top) + 16px) 14px calc(env(safe-area-inset-bottom) + 32px);
+    max-width: 760px; margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin: 2px 0 2px; }
+  .asof { color: var(--dim); font-size: 12px; margin-bottom: 16px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 14px;
+  }
+  .statusgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+  .stat { background: var(--card2); border-radius: 12px; padding: 10px 12px; }
+  .stat .k { font-size: 11px; color: var(--dim); }
+  .stat .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pill {
+    display: inline-block; font-size: 12px; font-weight: 700;
+    padding: 4px 10px; border-radius: 999px; margin-right: 6px;
+  }
+  .pill.on  { background: rgba(48,209,88,.16); color: var(--rising); }
+  .pill.off { background: rgba(125,133,144,.16); color: var(--unknown); }
+  .pill.rising  { background: rgba(48,209,88,.16); color: var(--rising); }
+  .pill.rolling { background: rgba(255,69,58,.16); color: var(--rolling); }
+  .pill.unknown { background: rgba(125,133,144,.16); color: var(--unknown); }
+  .chartwrap { position: relative; height: 340px; }
+  h2 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .sub { color: var(--dim); font-size: 12px; margin-bottom: 12px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--dim); margin-top: 10px; }
+  .legend span::before { content: ""; display: inline-block; width: 18px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .legend .l-rising::before  { background: var(--rising); }
+  .legend .l-rolling::before { background: var(--rolling); }
+  .legend .l-episode::before { background: rgba(139,151,165,.45); height: 2px; }
+  .cohorts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cohorts .card { margin-bottom: 0; }
+  .cohort h2 { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th { text-align: right; color: var(--dim); font-size: 11px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: none; }
+  .pos { color: var(--rising); } .neg { color: var(--rolling); }
+  .rowstats td { padding: 5px 0; border: none; }
+  .rowstats td:first-child { color: var(--dim); }
+  .caveats { color: var(--dim); font-size: 12px; }
+  .caveats li { margin: 6px 0 6px 16px; }
+  #err { display: none; }
+  #err.show { display: block; }
+  @media (max-width: 560px) {
+    .cohorts { grid-template-columns: 1fr; }
+    .statusgrid { grid-template-columns: repeat(3, 1fr); }
+    .stat .v { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="eyebrow">Rotation Radar · Study</div>
+<h1>Extension Overlay</h1>
+<div class="asof" id="asof">Loading…</div>
+
+<div class="card" id="err">
+  <h2>No dataset yet</h2>
+  <p class="sub">data/extension_overlay.json wasn't found. Run the
+  <b>extension-overlay</b> workflow in GitHub Actions (Actions tab → Extension
+  Overlay Study → Run workflow), wait for the commit, then reload this page.</p>
+</div>
+
+<div id="app" style="display:none">
+
+  <div class="card">
+    <h2>Current setup — SMH</h2>
+    <div id="pills"></div>
+    <div class="statusgrid">
+      <div class="stat"><div class="k">Above 200-day</div><div class="v" id="s-ext">–</div></div>
+      <div class="stat"><div class="k">Trailing 6-mo</div><div class="v" id="s-trail">–</div></div>
+      <div class="stat"><div class="k">Close / 200dma</div><div class="v" id="s-px">–</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Forward 6-month paths, stacked</h2>
+    <div class="sub">Every historical episode where semis were ≥<span id="p-ext"></span>%
+    above the 200-day after a ≥<span id="p-rally"></span>% six-month rally.
+    Day 0 = trigger, entry normalized to 100.</div>
+    <div class="chartwrap"><canvas id="chart"></canvas></div>
+    <div class="legend">
+      <span class="l-rising">Median — revisions rising</span>
+      <span class="l-rolling">Median — revisions rolling</span>
+      <span class="l-episode">Individual episodes</span>
+    </div>
+  </div>
+
+  <div class="cohorts">
+    <div class="card cohort">
+      <h2><span class="dot" style="background:var(--rising)"></span>Revisions rising</h2>
+      <table class="rowstats" id="t-rising"></table>
+    </div>
+    <div class="card cohort">
+      <h2><span class="dot" style="background:var(--rolling)"></span>Revisions rolling</h2>
+      <table class="rowstats" id="t-rolling"></table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h2>Nearest historical analogs to today</h2>
+    <div class="sub">Closest episodes to today's extension + trailing-rally coordinates.</div>
+    <table id="t-analogs"></table>
+  </div>
+
+  <div class="card">
+    <h2>Episode log</h2>
+    <table id="t-episodes"></table>
+  </div>
+
+  <div class="card caveats">
+    <h2>Read me before acting on this</h2>
+    <ul id="caveats"></ul>
+  </div>
+
+</div>
+
+<script>
+const COLORS = { rising: "#30D158", rolling: "#FF453A", unknown: "#7D8590" };
+const fmt = (v, s="%") => v === null || v === undefined ? "–"
+  : (v > 0 ? "+" : "") + v.toFixed(1) + s;
+const cls = v => v === null || v === undefined ? "" : (v >= 0 ? "pos" : "neg");
+
+async function load() {
+  let d;
+  try {
+    const r = await fetch("data/extension_overlay.json", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    d = await r.json();
+  } catch {
+    document.getElementById("err").classList.add("show");
+    document.getElementById("asof").textContent = "";
+    return;
+  }
+  render(d);
+}
+
+function render(d) {
+  document.getElementById("app").style.display = "block";
+  const c = d.current, p = d.meta.params;
+  document.getElementById("asof").textContent =
+    `As of ${c.as_of} · generated ${d.meta.generated_utc}`;
+  document.getElementById("p-ext").textContent = p.ext_threshold_pct;
+  document.getElementById("p-rally").textContent = p.rally_min_pct;
+
+  document.getElementById("pills").innerHTML =
+    `<span class="pill ${c.trigger_active ? "on" : "off"}">` +
+    `${c.trigger_active ? "Trigger active" : "Trigger not active"}</span>` +
+    `<span class="pill ${c.regime_tag}">Regime tag: ${c.regime_tag}</span>`;
+  document.getElementById("s-ext").textContent = fmt(c.ext_pct);
+  document.getElementById("s-trail").textContent = fmt(c.trail_6m_pct);
+  document.getElementById("s-px").textContent =
+    `${c.close} / ${c.ma200}`;
+
+  drawChart(d);
+
+  for (const tag of ["rising", "rolling"]) {
+    const s = d.cohorts[tag];
+    document.getElementById("t-" + tag).innerHTML = `
+      <tr><td>Episodes</td><td>${s.n} (${s.n_complete} complete)</td></tr>
+      <tr><td>Median +3 mo</td><td class="${cls(s.median_fwd_63d_pct)}">${fmt(s.median_fwd_63d_pct)}</td></tr>
+      <tr><td>Median +6 mo</td><td class="${cls(s.median_fwd_126d_pct)}">${fmt(s.median_fwd_126d_pct)}</td></tr>
+      <tr><td>Median interim DD</td><td class="neg">${fmt(s.median_max_dd_pct)}</td></tr>
+      <tr><td>Worst interim DD</td><td class="neg">${fmt(s.worst_max_dd_pct)}</td></tr>
+      <tr><td>Positive at 6 mo</td><td>${s.pct_positive_126d ?? "–"}%</td></tr>`;
+  }
+
+  document.getElementById("t-analogs").innerHTML =
+    `<tr><th>Date</th><th>Regime</th><th>Ext</th><th>+6 mo</th><th>Worst DD</th></tr>` +
+    c.nearest_analogs.map(a => `
+      <tr><td>${a.date} <span style="color:var(--dim)">${a.symbol}</span></td>
+      <td><span class="pill ${a.regime}" style="font-size:11px;padding:2px 8px">${a.regime}</span></td>
+      <td>${fmt(a.ext_pct)}</td>
+      <td class="${cls(a.fwd_126d_pct)}">${fmt(a.fwd_126d_pct)}</td>
+      <td class="neg">${fmt(a.max_dd_pct)}</td></tr>`).join("");
+
+  document.getElementById("t-episodes").innerHTML =
+    `<tr><th>Trigger</th><th>Regime</th><th>Ext</th><th>+6 mo</th><th>Worst DD</th></tr>` +
+    [...d.episodes].reverse().map(e => `
+      <tr><td>${e.date} <span style="color:var(--dim)">${e.symbol}</span></td>
+      <td><span class="pill ${e.regime}" style="font-size:11px;padding:2px 8px">${e.regime}</span></td>
+      <td>${fmt(e.ext_pct)}</td>
+      <td class="${cls(e.fwd_126d_pct)}">${e.complete ? fmt(e.fwd_126d_pct) : "open"}</td>
+      <td class="neg">${fmt(e.max_dd_pct)}</td></tr>`).join("");
+
+  document.getElementById("caveats").innerHTML =
+    d.meta.caveats.map(x => `<li>${x}</li>`).join("");
+}
+
+function drawChart(d) {
+  const stride = d.meta.params.path_stride_days;
+  const maxLen = Math.max(...d.episodes.map(e => e.path.length));
+  const labels = Array.from({ length: maxLen }, (_, i) => i * stride);
+
+  const datasets = d.episodes.map(e => ({
+    data: e.path,
+    borderColor: e.regime === "rising" ? "rgba(48,209,88,.28)"
+               : e.regime === "rolling" ? "rgba(255,69,58,.30)"
+               : "rgba(139,151,165,.22)",
+    borderWidth: 1.25, pointRadius: 0, tension: .25, fill: false,
+  }));
+  for (const tag of ["rising", "rolling"]) {
+    const mp = d.median_paths[tag];
+    if (mp && mp.length) datasets.push({
+      data: mp, borderColor: COLORS[tag], borderWidth: 3,
+      pointRadius: 0, tension: .25, fill: false,
+    });
+  }
+
+  new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: { title: { display: true, text: "Trading days after trigger",
+                      color: "#8B97A5", font: { size: 11 } },
+             ticks: { color: "#8B97A5", maxTicksLimit: 8 },
+             grid: { color: "rgba(255,255,255,.05)" } },
+        y: { ticks: { color: "#8B97A5" },
+             grid: { color: ctx => ctx.tick.value === 100
+                       ? "rgba(233,238,244,.35)" : "rgba(255,255,255,.05)" } },
+      },
+    },
+  });
+}
+
+load();
+</script>
+</body>
+</html>

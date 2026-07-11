@@ -1,0 +1,29 @@
+{
+  "_readme": "Universe for the rotation engine. 'sectors' are ranked in the RS table and comparison chart. 'groups' define the leadership-regime classification: each group's 63-day return is compared to SPY's, and the largest spread beyond the threshold names the regime (else 'broad'). Histories differ (XLRE 2015+, XLC 2018+, RSP 2003+); the engine uses whatever exists on each date.",
+  "benchmark": "SPY",
+  "sectors": [
+    { "ticker": "XLK",  "label": "Technology" },
+    { "ticker": "XLF",  "label": "Financials" },
+    { "ticker": "XLV",  "label": "Health Care" },
+    { "ticker": "XLE",  "label": "Energy" },
+    { "ticker": "XLI",  "label": "Industrials" },
+    { "ticker": "XLY",  "label": "Cons. Discretionary" },
+    { "ticker": "XLP",  "label": "Cons. Staples" },
+    { "ticker": "XLU",  "label": "Utilities" },
+    { "ticker": "XLB",  "label": "Materials" },
+    { "ticker": "XLRE", "label": "Real Estate" },
+    { "ticker": "XLC",  "label": "Communications" }
+  ],
+  "size_style": [
+    { "ticker": "RSP", "label": "Equal-weight S&P" },
+    { "ticker": "IWM", "label": "Small caps" },
+    { "ticker": "MGK", "label": "Mega-cap growth" }
+  ],
+  "groups": {
+    "defensive": ["XLP", "XLU", "XLV"],
+    "cyclical":  ["XLF", "XLI", "XLY", "XLB", "XLE"],
+    "megacap":   ["MGK"],
+    "smallcap":  ["IWM"]
+  },
+  "leadership_threshold_pct": 2.0
+}

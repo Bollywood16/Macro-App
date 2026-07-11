@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="PM">
+<title>PM Synthesis — Macro App</title>
+<style>
+  :root{--bg:#F5F5F7;--card:#FFF;--line:rgba(0,0,0,.08);--text:#1D1D1F;
+    --dim:#6E6E73;--blue:#0071E3;--green:#248A3D;--red:#D70015;
+    --amber:#C04A00;--chip:#EDEDF0;--radius:18px}
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--text);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    padding:calc(env(safe-area-inset-top) + 18px) 16px calc(env(safe-area-inset-bottom) + 40px);
+    max-width:760px;margin:0 auto;-webkit-font-smoothing:antialiased}
+  .back{font-size:13px;font-weight:600;color:var(--blue);text-decoration:none}
+  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:8px}
+  h1{font-size:30px;font-weight:700;letter-spacing:-.02em;margin:2px 0 14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  h2{font-size:16px;font-weight:700;margin-bottom:6px}
+  .sub{color:var(--dim);font-size:12.5px;margin-bottom:10px}
+  select,input[type=text],input[type=password]{width:100%;-webkit-appearance:none;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:11px 12px;font:15px -apple-system,sans-serif;color:var(--text);margin-bottom:10px}
+  button.go{width:100%;border:0;border-radius:14px;background:var(--blue);color:#fff;
+    font:700 16px -apple-system,sans-serif;padding:14px;cursor:pointer}
+  button.go:disabled{opacity:.5}
+  .headline{font-size:19px;font-weight:700;letter-spacing:-.01em}
+  .persp{padding:14px 0;border-bottom:1px solid var(--line)}
+  .persp:last-child{border-bottom:none}
+  .stance{display:inline-block;background:rgba(0,113,227,.10);color:var(--blue);
+    font-size:12px;font-weight:700;border-radius:999px;padding:4px 11px;margin-bottom:6px}
+  .persp p{font-size:14px;margin-bottom:6px}
+  .klabel{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--dim);margin:8px 0 3px}
+  .ev li{font-size:13px;color:var(--dim);margin:3px 0 3px 16px}
+  .break{font-size:13px;color:var(--red)}
+  .trip li{margin:6px 0 6px 16px;font-size:13.5px}
+  .note{font-size:13px;color:var(--dim)}
+  .spin{display:none;text-align:center;color:var(--dim);padding:26px;font-size:14px}
+  .spin.show{display:block}
+  #result{display:none}
+  .errbox{background:rgba(215,0,21,.06);border:1px solid rgba(215,0,21,.2);
+    border-radius:12px;padding:12px;color:var(--red);font-size:13.5px;display:none}
+  .errbox.show{display:block}
+  .disclaimer{font-size:11.5px;color:var(--dim);margin-top:16px}
+</style>
+</head>
+<body>
+
+<a class="back" href="index.html">‹ Home</a>
+<div class="eyebrow">Macro App · Synthesis</div>
+<h1>PM Read</h1>
+
+<div class="card">
+  <h2>Ask the desk</h2>
+  <div class="sub">The synthesis cites only computed numbers from the evidence
+    engines. Confidence comes from the data; the PM explains it, never invents it.</div>
+  <select id="focus">
+    <option value="">Portfolio-wide</option>
+  </select>
+  <input type="text" id="q" placeholder="Optional question — e.g. does the rotation regime change the SMH read?">
+  <input type="password" id="pass" placeholder="App passphrase (asked once, stored on this device)">
+  <button class="go" id="go">Analyze current setup</button>
+  <div class="errbox" id="errbox"></div>
+</div>
+
+<div class="spin" id="spin">Reading the evidence…</div>
+
+<div id="result">
+  <div class="card"><div class="headline" id="headline"></div></div>
+  <div class="card"><h2>Perspectives</h2><div id="persps"></div></div>
+  <div class="card"><h2>Tripwires</h2><ul class="trip" id="trips"></ul></div>
+  <div class="card"><h2>Analog map</h2>
+    <div class="klabel">Rhymes with</div><p class="note" id="rhymes"></p>
+    <div class="klabel">Where it breaks</div><p class="note" id="breaks"></p></div>
+  <div class="card"><h2>Discipline notes</h2>
+    <div class="klabel">Mining caution</div><p class="note" id="mining"></p>
+    <div class="klabel">Sizing arithmetic</div><p class="note" id="sizing"></p></div>
+</div>
+
+<div class="disclaimer">Research synthesis for personal use — not investment
+advice. Every figure originates in the Python engines; the model interprets,
+it does not compute.</div>
+
+<script>
+const FN_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/pm-synthesis";
+const passEl = document.getElementById("pass");
+passEl.value = localStorage.getItem("pm_pass") || "";
+
+// Populate the focus picker from whatever the research digest contains
+(async () => {
+  try {
+    const r = await fetch("data/research_digest.json", {cache:"no-store"});
+    if (!r.ok) return;
+    const d = await r.json();
+    const sel = document.getElementById("focus");
+    for (const [t,a] of Object.entries(d.assets))
+      sel.insertAdjacentHTML("beforeend",
+        `<option value="${t}">${a.label}</option>`);
+  } catch {}
+})();
+
+document.getElementById("go").onclick = async () => {
+  const pass = passEl.value.trim();
+  const err = document.getElementById("errbox");
+  err.classList.remove("show");
+  if (!pass) { err.textContent = "Enter the app passphrase you set in Supabase.";
+               err.classList.add("show"); return; }
+  localStorage.setItem("pm_pass", pass);
+
+  const btn = document.getElementById("go");
+  btn.disabled = true;
+  document.getElementById("result").style.display = "none";
+  document.getElementById("spin").classList.add("show");
+
+  try {
+    const r = await fetch(FN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-app-key": pass },
+      body: JSON.stringify({
+        focus: document.getElementById("focus").value || null,
+        question: document.getElementById("q").value.trim(),
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error === "bad passphrase"
+      ? "Passphrase rejected — check the APP_PASSPHRASE secret in Supabase."
+      : (d.error || "Request failed") + (d.detail ? ": " + String(d.detail).slice(0,200) : ""));
+    render(d);
+  } catch (e) {
+    err.textContent = e.message;
+    err.classList.add("show");
+  } finally {
+    btn.disabled = false;
+    document.getElementById("spin").classList.remove("show");
+  }
+};
+
+function esc(s){const d=document.createElement("div");d.textContent=s??"";return d.innerHTML;}
+
+function render(d) {
+  document.getElementById("headline").textContent = d.headline || "—";
+  document.getElementById("persps").innerHTML = (d.perspectives||[]).map(p=>`
+    <div class="persp">
+      <span class="stance">${esc(p.stance)}</span>
+      <p>${esc(p.thesis)}</p>
+      <div class="klabel">Evidence</div>
+      <ul class="ev">${(p.evidence||[]).map(e=>`<li>${esc(e)}</li>`).join("")}</ul>
+      <div class="klabel">Confidence basis</div>
+      <p class="note">${esc(p.confidence_basis)}</p>
+      <div class="klabel">What breaks it</div>
+      <p class="break">${esc(p.what_breaks_it)}</p>
+    </div>`).join("");
+  document.getElementById("trips").innerHTML =
+    (d.tripwires||[]).map(t=>`<li>${esc(t)}</li>`).join("");
+  document.getElementById("rhymes").textContent = d.analog_map?.rhymes_with || "—";
+  document.getElementById("breaks").textContent = d.analog_map?.where_it_breaks || "—";
+  document.getElementById("mining").textContent = d.mining_caution || "—";
+  document.getElementById("sizing").textContent = d.sizing_note || "—";
+  if (d.raw) document.getElementById("headline").textContent += " (raw output below)";
+  document.getElementById("result").style.display = "block";
+}
+</script>
+</body>
+</html>

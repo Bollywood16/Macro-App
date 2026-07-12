@@ -1,0 +1,10 @@
+{
+  "_readme": "Assets the research engine studies. Add any Yahoo Finance ticker. 'valuation': true attempts a current trailing P/E (works for some equity ETFs/stocks, never for commodities). 'use_revision_tags': true applies scripts/regime_config.json tags (only meaningful for semis-complex assets). 'query' is the news-search phrase for the sentiment layer.",
+  "assets": [
+    { "ticker": "SMH",  "label": "Semiconductors (SMH)", "valuation": true,  "use_revision_tags": true,  "query": "semiconductor stocks" },
+    { "ticker": "^SOX", "label": "SOX Index",            "valuation": false, "use_revision_tags": true,  "query": "semiconductor stocks" },
+    { "ticker": "SPY",  "label": "S&P 500 (SPY)",        "valuation": true,  "use_revision_tags": false, "query": "stock market S&P 500" },
+    { "ticker": "QQQ",  "label": "Nasdaq 100 (QQQ)",     "valuation": true,  "use_revision_tags": false, "query": "Nasdaq technology stocks" },
+    { "ticker": "GLD",  "label": "Gold (GLD)",           "valuation": false, "use_revision_tags": false, "query": "gold price" }
+  ]
+}

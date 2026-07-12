@@ -1,0 +1,29 @@
+name: Research Engine
+
+on:
+  schedule:
+    - cron: "45 21 * * 1-5"   # weekdays 21:45 UTC, after US close
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  run-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install yfinance pandas
+      - name: Run research engine
+        run: python scripts/research_engine.py
+      - name: Commit datasets if changed
+        run: |
+          git config user.name "rotation-radar-bot"
+          git config user.email "actions@github.com"
+          git add data/research_evidence.json data/research_digest.json
+          git diff --cached --quiet && echo "No changes" || \
+            (git commit -m "Update research engine datasets" && git push)

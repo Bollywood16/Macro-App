@@ -318,6 +318,84 @@ def relative_curves(panel, cfg, days=252, stride=3):
     return {"dates": dates, "curves": curves}
 
 
+
+
+# ---------------------------------------------------------------- macro
+
+FRED_SERIES = {
+    "DGS10":  ("10-Year Treasury", "%",
+               "What the government pays to borrow for 10 years. The anchor for mortgages and stock valuations — rising = tighter conditions."),
+    "DGS2":   ("2-Year Treasury", "%",
+               "Tracks where the market thinks the Fed is heading over the next couple of years."),
+    "DFF":    ("Fed Funds Rate", "%",
+               "The Fed's actual policy rate today."),
+    "UNRATE": ("Unemployment Rate", "%",
+               "Share of the labor force out of work. Rising off a low is the classic late-cycle warning."),
+    "ICSA":   ("Initial Jobless Claims", "k",
+               "People filing for unemployment for the first time each week — the fastest-updating jobs signal."),
+    "CPIYOY": ("CPI Inflation (YoY)", "%",
+               "How much consumer prices rose vs a year ago. What the Fed is reacting to."),
+    "BAMLH0A0HYM2": ("High-Yield Spread", "%",
+               "Extra yield junk-bond investors demand over Treasuries. The credit market's fear gauge — widening = stress building."),
+}
+
+
+def fred_series(series_id):
+    try:
+        df = pd.read_csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id="
+                         + series_id)
+        df.columns = ["date", "v"]
+        df["date"] = pd.to_datetime(df["date"])
+        df["v"] = pd.to_numeric(df["v"], errors="coerce")
+        return df.dropna().set_index("date")["v"]
+    except Exception as e:
+        print(f"[warn] FRED {series_id} unavailable: {e}")
+        return pd.Series(dtype=float)
+
+
+def value_at(s, when):
+    sub = s.loc[:when]
+    return float(sub.iloc[-1]) if len(sub) else None
+
+
+def macro_block(vix):
+    rows = []
+    now = pd.Timestamp.now()
+
+    def add(key, label, unit, explain, series):
+        if series is None or series.empty:
+            return
+        latest = float(series.iloc[-1])
+        asof = series.index[-1].strftime("%Y-%m-%d")
+        v3m = value_at(series, now - pd.Timedelta(days=91))
+        v1y = value_at(series, now - pd.Timedelta(days=365))
+        rows.append({
+            "key": key, "label": label, "unit": unit, "explain": explain,
+            "value": round(latest, 2), "asof": asof,
+            "chg_3m": round(latest - v3m, 2) if v3m is not None else None,
+            "chg_1y": round(latest - v1y, 2) if v1y is not None else None,
+        })
+
+    if vix is not None and not vix.empty:
+        add("VIX", "VIX", "", "Expected 30-day stock-market volatility. "
+            "Under 20 = calm, over 30 = stressed. Stands in for the fear/"
+            "greed gauge.", vix)
+    for sid, (label, unit, explain) in FRED_SERIES.items():
+        if sid == "CPIYOY":
+            cpi = fred_series("CPIAUCSL")
+            if cpi.empty or len(cpi) < 13:
+                continue
+            yoy = (cpi / cpi.shift(12) - 1) * 100
+            add(sid, label, unit, explain, yoy.dropna())
+        elif sid == "ICSA":
+            s = fred_series(sid)
+            add(sid, label, unit, explain, (s / 1000).dropna()
+                if not s.empty else s)
+        else:
+            add(sid, label, unit, explain, fred_series(sid))
+    return rows
+
+
 def main():
     with open(CONFIG_PATH) as f:
         cfg = json.load(f)
@@ -383,6 +461,7 @@ def main():
         "claims": claims[:15],
         "conjunctions_searched": searched,
         "episodes": [e for e in eps][-60:],
+        "macro": macro_block(vix),
     }
     os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
     with open(OUTPUT_PATH, "w") as f:

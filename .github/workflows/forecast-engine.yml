@@ -1,0 +1,44 @@
+name: Forecast Engine
+
+on:
+  schedule:
+    - cron: "0 22 * * 1-5"   # weekdays 22:00 UTC, after research/rotation
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "Single ticker for an on-demand run (blank = full universe post-close batch)"
+        required: false
+      price:
+        description: "Manual effective price (marks intraday_proxy=true). Requires ticker."
+        required: false
+      dry_run:
+        description: "Compute and print only; skip the Supabase write"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  run-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install yfinance pandas
+      - name: Run forecast engine
+        env:
+          APP_PASSPHRASE: ${{ secrets.APP_PASSPHRASE }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.ticker }}" ]; then
+            ARGS="$ARGS --ticker ${{ inputs.ticker }}"
+          fi
+          if [ -n "${{ inputs.price }}" ]; then
+            ARGS="$ARGS --price ${{ inputs.price }}"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python scripts/forecast_engine.py $ARGS

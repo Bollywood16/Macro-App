@@ -3,35 +3,275 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Research">
-<title>Evidence Engine — Macro App</title>
+<title>Research — Rotation Radar</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-  :root{--bg:#F5F5F7;--card:#FFF;--line:rgba(0,0,0,.08);--text:#1D1D1F;--dim:#6E6E73;--blue:#0071E3;--radius:18px}
-  *{box-sizing:border-box;margin:0}
-  body{background:var(--bg);color:var(--text);
-    font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
-    padding:calc(env(safe-area-inset-top) + 18px) 16px calc(env(safe-area-inset-bottom) + 40px);
-    max-width:760px;margin:0 auto;-webkit-font-smoothing:antialiased}
-  .back{font-size:13px;font-weight:600;color:var(--blue);text-decoration:none}
-  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:8px}
-  h1{font-size:30px;font-weight:700;letter-spacing:-.02em;margin:2px 0 14px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-    padding:18px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-  .card p{color:var(--dim);font-size:13.5px}
+  :root {
+    --bg: #F5F5F7; --card: #FFFFFF; --line: rgba(0,0,0,.08);
+    --text: #1D1D1F; --dim: #6E6E73; --blue: #0071E3;
+    --green: #248A3D; --red: #D70015; --amber: #C04A00;
+    --chip: #EDEDF0; --radius: 18px;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text",
+      "Segoe UI", Roboto, sans-serif;
+    padding: calc(env(safe-area-inset-top) + 18px) 16px
+      calc(env(safe-area-inset-bottom) + 40px);
+    max-width: 820px; margin: 0 auto; -webkit-font-smoothing: antialiased;
+  }
+  .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; margin: 2px 0; }
+  .asof { color: var(--dim); font-size: 12px; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px; margin-bottom: 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+  h2 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 12.5px; margin-bottom: 12px; }
+  .pickers { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  select { -webkit-appearance: none; appearance: none;
+    background: var(--card) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' stroke='%236E6E73' stroke-width='1.5' fill='none' stroke-linecap='round'/></svg>") no-repeat right 12px center;
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 9px 30px 9px 12px; font: 600 14px -apple-system, sans-serif;
+    color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .chip { background: var(--chip); border-radius: 999px; font-size: 12px;
+    font-weight: 600; padding: 4px 11px; color: var(--dim); }
+  .chip.on { background: rgba(36,138,61,.12); color: var(--green); }
+  .chip.warn { background: rgba(215,0,21,.10); color: var(--red); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px;
+    font-variant-numeric: tabular-nums; }
+  th { text-align: right; color: var(--dim); font-size: 11px; font-weight: 600;
+    padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  td { text-align: right; padding: 8px; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: none; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+  details { border-top: 1px solid var(--line); }
+  details:first-of-type { border-top: none; }
+  summary { cursor: pointer; padding: 9px 0; font-weight: 600; font-size: 13.5px;
+    list-style: none; display: flex; justify-content: space-between; }
+  summary::after { content: "ⓘ"; color: var(--dim); font-weight: 400; }
+  details p { color: var(--dim); font-size: 12.5px; padding: 0 0 10px; }
+  .claim { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .claim:last-child { border-bottom: none; }
+  .claim .conds { font-weight: 700; font-size: 13.5px; }
+  .claim .body { font-size: 13px; color: var(--dim); margin: 3px 0 7px; }
+  .confbar { height: 5px; background: var(--chip); border-radius: 3px; overflow: hidden; }
+  .confbar > div { height: 100%; border-radius: 3px; }
+  .conflab { font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .chartwrap { position: relative; height: 320px; }
+  .news { font-size: 12px; color: var(--dim); margin-top: 4px; }
+  .caveats li { margin: 6px 0 6px 16px; color: var(--dim); font-size: 12.5px; }
+  #err { display: none; } #err.show { display: block; }
 </style>
 </head>
 <body>
 
-<a class="back" href="index.html">‹ Home</a>
-<div class="eyebrow" style="margin-top:8px">Rotation Radar · Studies</div>
+<div class="eyebrow">Rotation Radar · Research</div>
 <h1>Evidence Engine</h1>
+<div class="asof" id="asof">Loading…</div>
 
-<div class="card">
-  <p>Page being rebuilt — this view will surface the per-asset evidence
-  engine (data/research_digest.json). Check back soon.</p>
+<div class="card" id="err">
+  <h2>No dataset yet</h2>
+  <p class="sub">data/research_digest.json wasn't found. Run the
+  <b>Research Engine</b> workflow (Actions tab → Research Engine →
+  Run workflow), wait for the commit, then reload.</p>
 </div>
 
+<div id="app" style="display:none">
+
+  <div class="pickers">
+    <select id="p-asset"></select>
+    <select id="p-trigger"></select>
+    <select id="p-samp"></select>
+  </div>
+
+  <div class="card">
+    <h2 id="cur-title">Current setup</h2>
+    <div class="sub" id="cur-sub"></div>
+    <div class="chips" id="cur-chips"></div>
+    <table id="t-snap" style="margin-top:12px"></table>
+    <div id="metric-help" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h2>What the record says</h2>
+    <div class="sub">Regime conjunctions mined from independent episodes.
+      Confidence is computed from sample size, consistency, conjunction depth,
+      and decade coverage — <span id="searched"></span> combinations were
+      searched, so treat low scores as noise.</div>
+    <div id="claims"></div>
+  </div>
+
+  <div class="card">
+    <h2>Forward 6-month paths</h2>
+    <div class="sub" id="study-sub"></div>
+    <table class="rowless" id="t-summary" style="margin-bottom:12px"></table>
+    <div class="chartwrap"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>Episode log</h2>
+    <div class="sub">Headlines are dated artifacts from the trigger day
+      (2017+ only). Older episodes are numbers-only by design.</div>
+    <div id="episodes"></div>
+  </div>
+
+  <div class="card">
+    <h2>Read before acting</h2>
+    <ul class="caveats" id="caveats"></ul>
+  </div>
+
+</div>
+
+<script>
+const HELP = {
+  "Price": "The closing price on that date.",
+  "RSI (14)": "Momentum thermometer from 0–100. Above ~70 = fast recent gains (possibly stretched); below ~30 = heavy recent selling (possibly washed out). Around 50 = neutral.",
+  "MACD hist.": "Gap between short- and long-term momentum. Positive and growing = acceleration up; negative and shrinking magnitude = downside momentum fading.",
+  "Ext. vs 200-day": "How far price sits above (+) or below (−) its 200-day average — the long-term trend line. Large positive numbers mean price ran far ahead of trend.",
+  "From 20-day high": "Distance below the highest close of the last month. 0% = at the highs; −10% = a pullback in progress.",
+  "Trailing P/E": "Price divided by the last year of earnings — what you pay per $1 of profit. Only meaningful for equity assets; gold and indexes show N/A. Current value only (no free history)."
+};
+const fmt = (v, s="%") => (v===null||v===undefined) ? "–"
+  : (v>0?"+":"")+Number(v).toFixed(1)+s;
+const cls = v => (v===null||v===undefined) ? "" : (v>=0?"pos":"neg");
+let D, chart;
+
+async function load() {
+  try {
+    const r = await fetch("data/research_digest.json", {cache:"no-store"});
+    if (!r.ok) throw 0;
+    D = await r.json();
+  } catch { document.getElementById("err").classList.add("show");
+            document.getElementById("asof").textContent=""; return; }
+  document.getElementById("app").style.display = "block";
+  document.getElementById("asof").textContent =
+    "Generated " + D.meta.generated_utc;
+  const pa = document.getElementById("p-asset");
+  pa.innerHTML = Object.entries(D.assets).map(([t,a]) =>
+    `<option value="${t}">${a.label}</option>`).join("");
+  const pt = document.getElementById("p-trigger");
+  pt.innerHTML = Object.entries(D.meta.triggers).map(([k,v]) =>
+    `<option value="${k}">${v.label}</option>`).join("");
+  const ps = document.getElementById("p-samp");
+  ps.innerHTML = Object.entries(D.meta.samplings).map(([k,v]) =>
+    `<option value="${k}" ${k==="uptrend"?"selected":""}>${k} sampling</option>`).join("");
+  [pa,pt,ps].forEach(x => x.onchange = render);
+  document.getElementById("caveats").innerHTML =
+    D.meta.caveats.map(c=>`<li>${c}</li>`).join("");
+  render();
+}
+
+function render() {
+  const t = document.getElementById("p-asset").value;
+  const trig = document.getElementById("p-trigger").value;
+  const samp = document.getElementById("p-samp").value;
+  const A = D.assets[t], S = A.studies[trig+"|"+samp];
+  const c = A.current;
+
+  document.getElementById("cur-title").textContent =
+    "Current setup — " + A.label;
+  document.getElementById("cur-sub").textContent = "As of " + c.as_of;
+  const chips = [];
+  for (const [k,v] of Object.entries(c.regimes))
+    chips.push(`<span class="chip ${v==="widening"||v==="stressed"||v==="rolling"||v==="below"?"warn":(v==="unknown"?"":"on")}">${k}: ${v}</span>`);
+  for (const [k,v] of Object.entries(c.triggers_active))
+    chips.push(`<span class="chip ${v?"warn":""}">${D.meta.triggers[k].label}: ${v?"ACTIVE":"not active"}</span>`);
+  document.getElementById("cur-chips").innerHTML = chips.join("");
+
+  const rows = [["Price","price",(v)=>v],["RSI (14)","rsi14",(v)=>v],
+    ["MACD hist.","macd_hist",(v)=>v],["Ext. vs 200-day","ext200_pct",fmt],
+    ["From 20-day high","from_hi20_pct",fmt]];
+  const cols = ["today","1m","3m","6m","1y"];
+  let html = `<tr><th></th>${cols.map(c=>`<th>${c==="today"?"Today":"−"+c}</th>`).join("")}</tr>`;
+  for (const [label,key,f] of rows)
+    html += `<tr><td>${label}</td>` + cols.map(cc => {
+      const s = c.snapshots[cc];
+      return `<td>${s&&s[key]!==undefined?f(s[key]):"–"}</td>`; }).join("") + "</tr>";
+  html += `<tr><td>Trailing P/E</td><td>${c.trailing_pe ?? "N/A"}</td>
+    <td colspan="4" style="color:var(--dim);text-align:right">current only</td></tr>`;
+  document.getElementById("t-snap").innerHTML = html;
+  document.getElementById("metric-help").innerHTML =
+    Object.entries(HELP).map(([k,v]) =>
+      `<details><summary>${k}</summary><p>${v}</p></details>`).join("");
+
+  document.getElementById("searched").textContent = S.conjunctions_searched;
+  document.getElementById("claims").innerHTML = S.claims.length
+    ? S.claims.map(cl => {
+        const color = cl.confidence>=70?"var(--green)":
+          (cl.confidence>=40?"var(--amber)":"var(--dim)");
+        return `<div class="claim">
+          <div class="conds">${cl.conditions.join(" + ")}</div>
+          <div class="body">n=${cl.n} independent episodes across
+            ${cl.decades_covered} decade(s): median 6-mo
+            <b class="${cls(cl.median_fwd_126d_pct)}">${fmt(cl.median_fwd_126d_pct)}</b>,
+            floor ${fmt(cl.floor_fwd_126d_pct)}, worst interim drawdown
+            ${fmt(cl.worst_interim_dd_pct)}. ${cl.pct_agreeing}% of episodes
+            agreed with the median's sign.
+            ${cl.exceptions.length?("Exceptions: "+cl.exceptions.join(", ")+"."):""}</div>
+          <div class="confbar"><div style="width:${cl.confidence}%;background:${color}"></div></div>
+          <div class="conflab">Confidence ${cl.confidence}/100 — ${cl.confidence_label}</div>
+        </div>`; }).join("")
+    : `<div class="sub">No conjunction reached the 4-episode minimum under this sampling. That itself is information: the honest n is small.</div>`;
+
+  const sm = S.summary;
+  document.getElementById("study-sub").textContent =
+    D.meta.triggers[trig].desc + " · " + D.meta.samplings[samp];
+  document.getElementById("t-summary").innerHTML =
+    `<tr><th>Episodes</th><th>Median +6 mo</th><th>Median DD</th>
+     <th>Worst DD</th><th>Positive</th></tr>
+     <tr><td>${sm.n} (${sm.n_complete} complete)</td>
+     <td class="${cls(sm.median_fwd_126d_pct)}">${fmt(sm.median_fwd_126d_pct)}</td>
+     <td class="neg">${fmt(sm.median_max_dd_pct)}</td>
+     <td class="neg">${fmt(sm.worst_max_dd_pct)}</td>
+     <td>${sm.pct_positive_126d ?? "–"}%</td></tr>`;
+
+  drawChart(S);
+
+  document.getElementById("episodes").innerHTML =
+    [...S.episodes].reverse().map(e => `
+      <div style="padding:10px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between;font-weight:600;font-size:13.5px">
+          <span>${e.date}</span>
+          <span class="${cls(e.fwd_126d_pct)}">${e.complete?fmt(e.fwd_126d_pct):"open"}
+            <span style="color:var(--dim);font-weight:400"> / DD ${fmt(e.max_dd_pct)}</span></span>
+        </div>
+        <div class="chips" style="margin-top:4px">${Object.entries(e.regimes)
+          .map(([k,v])=>`<span class="chip">${k}: ${v}</span>`).join("")}</div>
+        ${e.news && e.news.length ? `<div class="news">📰 ` +
+          e.news.map(nw=>`${nw.title} <span style="opacity:.6">(${nw.source})</span>`)
+          .join(" · ") + `</div>` : ""}
+      </div>`).join("");
+}
+
+function drawChart(S) {
+  if (chart) chart.destroy();
+  const maxLen = Math.max(1, ...S.episodes.map(e=>e.path.length));
+  const labels = Array.from({length:maxLen}, (_,i)=>i*5);
+  const datasets = S.episodes.map(e => ({
+    data: e.path, borderWidth: 1.4, pointRadius: 0, tension: .25,
+    borderColor: (e.fwd_126d_pct ?? 0) >= 0
+      ? "rgba(36,138,61,.35)" : "rgba(215,0,21,.35)",
+  }));
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line", data: { labels, datasets },
+    options: { responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display:false }, tooltip: { enabled:false } },
+      scales: {
+        x: { title: { display:true, text:"Trading days after trigger",
+              color:"#6E6E73", font:{size:11} },
+             ticks:{ color:"#6E6E73", maxTicksLimit:8 },
+             grid:{ color:"rgba(0,0,0,.05)" } },
+        y: { ticks:{ color:"#6E6E73" },
+             grid:{ color: ctx => ctx.tick.value===100
+               ? "rgba(0,0,0,.3)" : "rgba(0,0,0,.05)" } } } }
+  });
+}
+
+load();
+</script>
 </body>
 </html>

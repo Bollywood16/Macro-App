@@ -472,7 +472,7 @@ async function send(){
     const d = await r.json();
     if(!r.ok||d.error) throw new Error(d.error==="bad passphrase"
       ? "Passphrase rejected — check the sidebar passphrase vs Supabase secret."
-      : (d.error||"Request failed"));
+      : (d.error||"Request failed") + (d.detail ? ": "+String(d.detail).slice(0,200) : ""));
     document.getElementById("think").outerHTML =
       `<div class="msg ai"><div class="bubble">${aiCard(d)}</div></div>`;
   }catch(e){

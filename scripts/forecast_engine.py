@@ -305,6 +305,8 @@ def horizon_stats(close: pd.Series, spy_close_aligned: pd.Series, positions,
         "q50": round(float(s.quantile(0.5)), 4),
         "q80": round(float(s.quantile(0.8)), 4),
         "expected_mae": round(float(np.mean(mae)), 4),
+        "mean_excess_return": (round(float(np.mean(excess)), 4)
+                                if excess else None),
     }
 
 
@@ -555,6 +557,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
             "analog_episode_count": len(analog_pos),
             "regime_episode_count": len(regime_pos),
             "regime_match_depth": regime_depth,
+            "ensemble_mean_excess_return": ens.get("mean_excess_return") if ens else None,
             "sub_models": {
                 "analog": horizon_rows[h]["analog"],
                 "regime_base_rate": horizon_rows[h]["regime"],

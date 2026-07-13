@@ -109,6 +109,8 @@
   button.go{width:100%;border:0;border-radius:14px;background:var(--blue);color:#fff;
     font:700 15px -apple-system,sans-serif;padding:13px;cursor:pointer;margin-top:2px}
   button.go:disabled{opacity:.5}
+  button.ghost{border:1px solid var(--line);border-radius:12px;background:var(--card);
+    color:var(--text);font:700 13px -apple-system,sans-serif;padding:9px 16px;cursor:pointer;margin-top:8px}
   .errbox{background:rgba(215,0,21,.06);border:1px solid rgba(215,0,21,.2);
     border-radius:12px;padding:11px;color:var(--red);font-size:13px;display:none;margin-top:4px}
   .errbox.show{display:block}
@@ -137,6 +139,13 @@
   .jcard .meta{color:var(--dim);font-size:12px;margin-top:2px}
   .jcard .thesis{font-size:13px;margin-top:6px}
   .empty{color:var(--dim);font-size:13px;padding:6px 0}
+  .setup-card{display:flex;gap:12px;align-items:flex-start}
+  .setup-rank{flex:0 0 auto;width:26px;height:26px;border-radius:999px;background:var(--panel);
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--dim)}
+  .setup-body{flex:1;min-width:0}
+  .triggerchip{display:inline-block;background:rgba(0,0,0,.05);color:var(--dim);
+    font-size:11px;border-radius:999px;padding:2px 9px;margin:0 5px 5px 0}
+  .outcome-line{font-size:12.5px;color:var(--dim);margin-top:4px}
 
   @media (max-width:720px){
     aside{position:fixed;left:0;top:0;bottom:0;z-index:20;transform:translateX(-105%)}
@@ -158,6 +167,7 @@
     <div class="navlabel">Data</div>
     <button data-v="macro"><span class="ic">☰</span>Macro</button>
     <div class="navlabel">Market Memory</div>
+    <button data-v="scanner"><span class="ic">◎</span>Scanner</button>
     <button data-v="forecast"><span class="ic">◈</span>Forecast</button>
     <button data-v="journal"><span class="ic">▤</span>Journal</button>
     <div class="navlabel">Studies</div>
@@ -221,6 +231,13 @@
     <div class="card"><h2>What each one means</h2><div id="mac-help"></div></div>
   </div>
 
+  <!-- SCANNER -->
+  <div class="view" id="view-scanner">
+    <h1>Scanner</h1>
+    <div class="sub" id="sc-asof">Today's Setups — event-gated, ranked shortlist from the daily scan.</div>
+    <div id="sc-list"></div>
+  </div>
+
   <!-- FORECAST -->
   <div class="view" id="view-forecast">
     <h1>Forecast</h1>
@@ -279,6 +296,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
     v.classList.toggle("on", v.id === "view-"+b.dataset.v));
   side.classList.remove("open");
   if(b.dataset.v === "journal") loadJournal();
+  if(b.dataset.v === "scanner") loadScanner();
 });
 
 /* data */
@@ -501,6 +519,23 @@ async function fcAnalyze(){
 }
 document.getElementById("fc-go").onclick = fcAnalyze;
 
+// Pulls up an already-persisted forecast (e.g. from the Scanner tab, which
+// already confirmed one exists for today) without triggering a new Action run.
+async function fcLoadAndRender(ticker){
+  const err = document.getElementById("fc-err");
+  err.classList.remove("show");
+  document.getElementById("fc-result").style.display = "none";
+  document.getElementById("fc-timeout").style.display = "none";
+  document.getElementById("fc-ticker").value = ticker;
+  try{
+    const r = await mmCall("get_latest_forecast", {ticker});
+    if(!r.forecasts?.length){ err.textContent = `No forecast on file for ${ticker} yet.`; err.classList.add("show"); return; }
+    fcRender(r.forecasts);
+  }catch(e){
+    err.textContent = e.message; err.classList.add("show");
+  }
+}
+
 function fcRender(rows){
   fcHorizons = rows;
   fcSelectedHorizon = rows.find(r=>r.horizon_days===5) ? 5 : rows[0].horizon_days;
@@ -614,6 +649,54 @@ async function fcSubmitDecision(){
   }
 }
 
+/* ---------- scanner ---------- */
+let scannerLoaded = false;
+
+async function loadScanner(){
+  if(scannerLoaded) return;
+  scannerLoaded = true;
+  const asofEl = document.getElementById("sc-asof");
+  const listEl = document.getElementById("sc-list");
+  try{
+    const r = await fetch("data/scanner_digest.json",{cache:"no-store"});
+    if(!r.ok) throw new Error("No scanner digest yet — it's written by the daily post-close Action.");
+    const d = await r.json();
+    asofEl.textContent = `Today's Setups · generated ${d.meta?.generated_utc||'–'} · `+
+      `scanned ${d.scanned_universe_count} · ${d.setups_count} passed the gate`;
+    const setups = d.setups||[];
+    if(!setups.length){
+      listEl.innerHTML = `<div class="card empty">No setups passed the gate today — `+
+        `activity is not success, this is expected on quiet days.</div>`;
+      return;
+    }
+    listEl.innerHTML = setups.map((s,i)=>`
+      <div class="card setup-card">
+        <div class="setup-rank">#${i+1}</div>
+        <div class="setup-body">
+          <span class="reclabel ${RECLABEL_CLASS[s.recommendation_label]||'rec-none'}">
+            ${RECLABEL_TEXT[s.recommendation_label]||s.recommendation_label||'–'}</span>
+          <h2 style="margin-top:2px">${esc(s.ticker)} <span style="color:var(--dim);font-weight:400">${esc(s.label||'')}</span></h2>
+          <div>${(s.triggers_active||[]).map(t=>`<span class="triggerchip">${esc(t.replace(/_/g,' '))}</span>`).join("")}</div>
+          <div class="metricrow">
+            <div class="metric"><div class="v">${pct0(s.p_positive)}</div><div class="l">Probability positive</div></div>
+            <div class="metric"><div class="v">${pct(s.expected_mae)}</div><div class="l">Expected max adverse</div></div>
+            <div class="metric"><div class="v">${esc(s.confidence_label||'–')}</div><div class="l">Confidence</div></div>
+            <div class="metric"><div class="v">${s.opportunity_score}</div><div class="l">Opportunity score</div></div>
+          </div>
+          <button class="ghost sc-view" data-ticker="${esc(s.ticker)}" style="width:auto;padding:9px 16px">View &amp; decide →</button>
+        </div>
+      </div>`).join("");
+    listEl.querySelectorAll(".sc-view").forEach(btn => btn.onclick = () => {
+      document.querySelector('nav button[data-v="forecast"]').click();
+      fcLoadAndRender(btn.dataset.ticker);
+    });
+  }catch(e){
+    asofEl.textContent = "";
+    listEl.innerHTML = `<div class="card empty">${esc(e.message)}</div>`;
+    scannerLoaded = false;
+  }
+}
+
 /* ---------- journal ---------- */
 async function loadJournal(){
   const subEl = document.getElementById("jr-sub");
@@ -629,12 +712,16 @@ async function loadJournal(){
 
 function jCard(d){
   const fc = d.forecasts || {};
+  const outcome = (fc.outcomes && fc.outcomes[0]) || null;
   return `<div class="jcard">
     <div class="top"><span>${esc(fc.ticker||'–')} · ${esc(d.action)}</span>
       <span style="color:var(--dim);font-weight:400">${esc(new Date(d.created_at).toLocaleDateString())}</span></div>
     <div class="meta">${fc.horizon_days??d.horizon_days??'–'}d horizon · model p+ ${pct0(fc.p_positive)}
       · confidence ${esc(fc.confidence_label||'–')}</div>
     ${d.thesis?`<div class="thesis">${esc(d.thesis)}</div>`:""}
+    ${outcome?`<div class="outcome-line">What happened: ${pct(outcome.abs_return)}
+      (${pct(outcome.excess_return)} vs SPY)${outcome.brier!=null?` · Brier ${outcome.brier.toFixed(3)}`:""}
+      · model was ${outcome.event_occurred===(fc.p_positive>0.5)?"directionally right":"wrong"}</div>`:""}
   </div>`;
 }
 
@@ -655,7 +742,7 @@ function renderJournal(rows){
   document.getElementById("jr-approaching").innerHTML =
     approaching.length ? approaching.map(jCard).join("") : `<div class="empty">Nothing approaching evaluation.</div>`;
   document.getElementById("jr-history").innerHTML =
-    history.length ? history.map(jCard).join("") : `<div class="empty">No evaluated decisions yet — outcomes land in M4.</div>`;
+    history.length ? history.map(jCard).join("") : `<div class="empty">No evaluated decisions yet — outcomes are scored once a forecast's horizon actually elapses.</div>`;
 }
 </script>
 </body>

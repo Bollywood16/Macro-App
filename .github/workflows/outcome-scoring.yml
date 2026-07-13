@@ -1,0 +1,21 @@
+name: Outcome Scoring
+
+on:
+  schedule:
+    - cron: "35 22 * * 1-5"   # weekdays 22:35 UTC — after the Scanner
+  workflow_dispatch: {}
+
+jobs:
+  run-outcome-scoring:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install yfinance pandas numpy
+      - name: Run outcome scoring
+        env:
+          APP_PASSPHRASE: ${{ secrets.APP_PASSPHRASE }}
+        run: python scripts/outcome_scoring.py

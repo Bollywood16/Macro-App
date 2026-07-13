@@ -97,6 +97,47 @@
   .composer button:disabled{opacity:.5}
   .errline{color:var(--red);font-size:12.5px;padding:6px 2px}
 
+  /* ---------- forecast / journal ---------- */
+  .formfield{width:100%;-webkit-appearance:none;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:11px 12px;
+    font:15px -apple-system,sans-serif;color:var(--text);margin-bottom:10px}
+  textarea.formfield{resize:vertical;min-height:64px;font-family:inherit}
+  label.fl{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--dim);margin:10px 0 4px}
+  label.fl:first-child{margin-top:0}
+  .checkline{display:flex;align-items:center;gap:8px;font-size:13.5px;margin:8px 0}
+  button.go{width:100%;border:0;border-radius:14px;background:var(--blue);color:#fff;
+    font:700 15px -apple-system,sans-serif;padding:13px;cursor:pointer;margin-top:2px}
+  button.go:disabled{opacity:.5}
+  .errbox{background:rgba(215,0,21,.06);border:1px solid rgba(215,0,21,.2);
+    border-radius:12px;padding:11px;color:var(--red);font-size:13px;display:none;margin-top:4px}
+  .errbox.show{display:block}
+  .spin{display:none;text-align:center;color:var(--dim);padding:20px;font-size:13.5px}
+  .spin.show{display:block}
+  .reclabel{display:inline-block;font-size:11.5px;font-weight:700;border-radius:999px;
+    padding:4px 11px;margin-bottom:8px}
+  .rec-long{background:rgba(36,138,61,.10);color:var(--green)}
+  .rec-defensive{background:rgba(215,0,21,.10);color:var(--red)}
+  .rec-neutral{background:rgba(0,113,227,.10);color:var(--blue)}
+  .rec-none{background:rgba(0,0,0,.06);color:var(--dim)}
+  .metricrow{display:flex;flex-wrap:wrap;gap:14px 22px;margin:10px 0}
+  .metric{min-width:110px}
+  .metric .v{font-size:17px;font-weight:700}
+  .metric .l{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+  .klabel{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--dim);margin-top:10px}
+  .card ul.bl{margin:4px 0 4px 16px;font-size:13px;color:var(--dim)}
+  .hlist{display:flex;gap:8px;overflow-x:auto;padding:2px 0 8px}
+  .hchip{flex:0 0 auto;border:1px solid var(--line);border-radius:12px;padding:8px 12px;
+    font-size:12.5px;min-width:88px;cursor:pointer;background:var(--card)}
+  .hchip.on{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}
+  .hchip .hd{font-weight:700}
+  .jcard{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px}
+  .jcard .top{display:flex;justify-content:space-between;font-size:13px;font-weight:700}
+  .jcard .meta{color:var(--dim);font-size:12px;margin-top:2px}
+  .jcard .thesis{font-size:13px;margin-top:6px}
+  .empty{color:var(--dim);font-size:13px;padding:6px 0}
+
   @media (max-width:720px){
     aside{position:fixed;left:0;top:0;bottom:0;z-index:20;transform:translateX(-105%)}
     aside.open{transform:translateX(0);box-shadow:0 0 40px rgba(0,0,0,.25)}
@@ -116,6 +157,9 @@
     <button data-v="size"><span class="ic">◱</span>Size &amp; Style</button>
     <div class="navlabel">Data</div>
     <button data-v="macro"><span class="ic">☰</span>Macro</button>
+    <div class="navlabel">Market Memory</div>
+    <button data-v="forecast"><span class="ic">◈</span>Forecast</button>
+    <button data-v="journal"><span class="ic">▤</span>Journal</button>
     <div class="navlabel">Studies</div>
     <a href="research.html"><span class="ic">⌕</span>Research</a>
     <a href="overlay.html"><span class="ic">↗</span>Extension Overlay</a>
@@ -176,6 +220,41 @@
     <div class="card"><h2>Current readings</h2><table id="mac-table"></table></div>
     <div class="card"><h2>What each one means</h2><div id="mac-help"></div></div>
   </div>
+
+  <!-- FORECAST -->
+  <div class="view" id="view-forecast">
+    <h1>Forecast</h1>
+    <div class="sub">On-demand ETF analysis — historical analog model +
+      regime-conditioned base rate. Confidence is computed, never invented.</div>
+    <div class="card">
+      <h2>Analyze</h2>
+      <select class="formfield" id="fc-ticker"></select>
+      <input class="formfield" type="number" step="0.01" id="fc-price"
+        placeholder="Manual price (optional — overrides today's close)">
+      <button class="go" id="fc-go">Analyze</button>
+      <div class="errbox" id="fc-err"></div>
+    </div>
+    <div class="spin" id="fc-spin">Running the forecast engine — this can take up to a minute…</div>
+    <div class="card" id="fc-timeout" style="display:none">
+      Still running after 90s. Check the
+      <a href="https://github.com/Bollywood16/Macro-App/actions/workflows/forecast-engine.yml"
+        target="_blank" rel="noopener">Actions run</a> directly, then click Analyze
+      again once it finishes to pull the result in.
+    </div>
+    <div id="fc-result" style="display:none">
+      <div class="card" id="fc-card"></div>
+      <div class="card" id="fc-decision"></div>
+    </div>
+  </div>
+
+  <!-- JOURNAL -->
+  <div class="view" id="view-journal">
+    <h1>Journal</h1>
+    <div class="sub" id="jr-sub">Decision history and open positions.</div>
+    <div class="card"><h2>Open decisions</h2><div id="jr-open"></div></div>
+    <div class="card"><h2>Approaching evaluation</h2><div id="jr-approaching"></div></div>
+    <div class="card"><h2>History</h2><div id="jr-history"></div></div>
+  </div>
 </main>
 
 <script>
@@ -199,6 +278,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".view").forEach(v=>
     v.classList.toggle("on", v.id === "view-"+b.dataset.v));
   side.classList.remove("open");
+  if(b.dataset.v === "journal") loadJournal();
 });
 
 /* data */
@@ -327,6 +407,256 @@ async function send(){
 document.getElementById("send").onclick = send;
 document.getElementById("q").addEventListener("keydown",
   e=>{ if(e.key==="Enter") send(); });
+
+/* ---------- forecast ---------- */
+const MM_FN_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/mm-journal";
+const pct = v => v==null ? "–" : (v>0?"+":"")+(v*100).toFixed(1)+"%";
+const pct0 = v => v==null ? "–" : Math.round(v*100)+"%";
+const RECLABEL_TEXT = {
+  no_reliable_signal: "No reliable signal",
+  hold_no_change: "Hold / no change",
+  watch_for_confirmation: "Watch for confirmation",
+  reduce_defensive_candidate: "Reduce / defensive candidate",
+  moderate_long_candidate: "Moderate long candidate",
+  high_conviction_long_candidate: "High-conviction long candidate",
+};
+const RECLABEL_CLASS = {
+  no_reliable_signal: "rec-none",
+  hold_no_change: "rec-neutral",
+  watch_for_confirmation: "rec-neutral",
+  reduce_defensive_candidate: "rec-defensive",
+  moderate_long_candidate: "rec-long",
+  high_conviction_long_candidate: "rec-long",
+};
+
+async function mmCall(op, payload){
+  const pass = document.getElementById("pass").value.trim()
+    || localStorage.getItem("pm_pass") || "";
+  if(!pass) throw new Error("Set the app passphrase in the sidebar first.");
+  const r = await fetch(MM_FN_URL, {method:"POST",
+    headers:{"Content-Type":"application/json","x-app-key":pass},
+    body: JSON.stringify({op, payload})});
+  const d = await r.json();
+  if(!r.ok || d.error) throw new Error(d.error === "bad passphrase"
+    ? "Passphrase rejected — check the sidebar passphrase vs Supabase secret."
+    : (d.error||"Request failed") + (d.detail ? ": "+String(d.detail).slice(0,200) : ""));
+  return d;
+}
+
+async function loadUniverse(){
+  const sel = document.getElementById("fc-ticker");
+  try{
+    const [u,r] = await Promise.all([
+      fetch("scripts/universe_config.json",{cache:"no-store"}).then(x=>x.json()),
+      fetch("scripts/rotation_config.json",{cache:"no-store"}).then(x=>x.json()),
+    ]);
+    const seen = new Set(), merged = [];
+    for(const a of [...u.assets, ...r.sectors, ...r.size_style]){
+      if(seen.has(a.ticker)) continue;
+      seen.add(a.ticker); merged.push(a);
+    }
+    sel.innerHTML = merged.map(a=>`<option value="${a.ticker}">${a.ticker} — ${esc(a.label)}</option>`).join("");
+  }catch(e){
+    sel.innerHTML = `<option value="">Universe unavailable — reload the page</option>`;
+  }
+}
+loadUniverse();
+
+let fcHorizons = null, fcSelectedHorizon = 5;
+
+async function fcAnalyze(){
+  const ticker = document.getElementById("fc-ticker").value;
+  const priceRaw = document.getElementById("fc-price").value.trim();
+  const price = priceRaw ? Number(priceRaw) : null;
+  const err = document.getElementById("fc-err");
+  err.classList.remove("show");
+  const btn = document.getElementById("fc-go");
+  document.getElementById("fc-result").style.display = "none";
+  document.getElementById("fc-timeout").style.display = "none";
+  if(!ticker){ err.textContent = "Pick a ticker."; err.classList.add("show"); return; }
+  btn.disabled = true;
+  document.getElementById("fc-spin").classList.add("show");
+  try{
+    let baseline = null;
+    try{
+      const before = await mmCall("get_latest_forecast", {ticker});
+      baseline = before.forecasts?.[0]?.as_of_ts || null;
+    }catch{ /* no prior forecast for this ticker yet — fine */ }
+    await mmCall("trigger_forecast", price!=null ? {ticker, price} : {ticker});
+    let landed = null;
+    for(let i=0;i<18 && !landed;i++){
+      await new Promise(res=>setTimeout(res,5000));
+      const r = await mmCall("get_latest_forecast", {ticker});
+      const asOf = r.forecasts?.[0]?.as_of_ts;
+      if(asOf && asOf !== baseline && r.forecasts?.length) landed = r.forecasts;
+    }
+    if(!landed){ document.getElementById("fc-timeout").style.display = "block"; return; }
+    fcRender(landed);
+  }catch(e){
+    err.textContent = e.message; err.classList.add("show");
+  }finally{
+    btn.disabled = false;
+    document.getElementById("fc-spin").classList.remove("show");
+  }
+}
+document.getElementById("fc-go").onclick = fcAnalyze;
+
+function fcRender(rows){
+  fcHorizons = rows;
+  fcSelectedHorizon = rows.find(r=>r.horizon_days===5) ? 5 : rows[0].horizon_days;
+  document.getElementById("fc-result").style.display = "block";
+  fcRenderCard();
+  fcRenderDecisionForm();
+}
+
+function fcRenderCard(){
+  const row = fcHorizons.find(r=>r.horizon_days===fcSelectedHorizon);
+  const ev = row.evidence_json || {};
+  const ft = row.features_json || {};
+  const rg = ft.regime || {};
+  const rec = ev.recommendation_label || "no_reliable_signal";
+  let h = `<span class="reclabel ${RECLABEL_CLASS[rec]||'rec-none'}">${RECLABEL_TEXT[rec]||rec}</span>`;
+  h += `<h2 style="margin-top:2px">${esc(row.ticker)} · ${row.horizon_days} trading days</h2>`;
+  h += `<div class="sub">As of ${esc(new Date(row.as_of_ts).toLocaleString())} ·
+    effective price $${Number(row.effective_price).toFixed(2)}${ft.intraday_proxy?" (manual override)":""}</div>`;
+  h += `<div class="hlist">`+fcHorizons.map(r=>
+    `<div class="hchip ${r.horizon_days===fcSelectedHorizon?'on':''}" data-h="${r.horizon_days}">
+       <div class="hd">${r.horizon_days}d</div>${pct0(r.p_positive)} pos · ${esc(r.confidence_label||'–')}
+     </div>`).join("")+`</div>`;
+  h += `<div class="metricrow">
+    <div class="metric"><div class="v">${pct0(row.p_positive)}</div><div class="l">Probability positive</div></div>
+    <div class="metric"><div class="v">${pct0(row.p_beat_benchmark)}</div><div class="l">Beat SPY</div></div>
+    <div class="metric"><div class="v">${pct(row.q50)}</div><div class="l">Median return</div></div>
+    <div class="metric"><div class="v">${pct(row.q20)} to ${pct(row.q80)}</div><div class="l">20th–80th pct</div></div>
+    <div class="metric"><div class="v">${pct(row.expected_mae)}</div><div class="l">Expected max adverse</div></div>
+    <div class="metric"><div class="v">${row.n_independent??'–'}</div><div class="l">Independent episodes</div></div>
+    <div class="metric"><div class="v">${esc(row.confidence_label||'–')} (${row.confidence_score!=null?Math.round(row.confidence_score*100)+'%':'–'})</div><div class="l">Confidence</div></div>
+  </div>`;
+  if(ev.why_it_triggered?.length) h += `<div class="klabel">Why it triggered</div><ul class="bl">`+
+    ev.why_it_triggered.map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
+  h += `<div class="klabel">Regime</div><div class="sub" style="margin-bottom:0">
+    VIX ${esc(rg.vix||'–')} · credit ${esc(rg.credit||'–')} · SPY-trend ${esc(rg.spy_trend||'–')}</div>`;
+  if(ev.invalidation_risks?.length) h += `<div class="klabel">Invalidation risks</div><ul class="bl">`+
+    ev.invalidation_risks.map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
+  if(ev.warnings?.length) h += `<div class="klabel">Warnings</div><ul class="bl">`+
+    ev.warnings.map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
+  h += `<div class="klabel">Model action</div><div class="sub" style="margin-bottom:0">${esc(ev.model_action||'')}</div>`;
+  document.getElementById("fc-card").innerHTML = h;
+  document.querySelectorAll(".hchip").forEach(chip => chip.onclick = () => {
+    fcSelectedHorizon = Number(chip.dataset.h);
+    fcRenderCard();
+    fcRenderDecisionForm();
+  });
+}
+
+function fcRenderDecisionForm(){
+  const row = fcHorizons.find(r=>r.horizon_days===fcSelectedHorizon);
+  document.getElementById("fc-decision").innerHTML = `
+    <h2>Log a decision</h2>
+    <div class="sub">Acting on the ${row.horizon_days}-day forecast above.</div>
+    <label class="fl">Action</label>
+    <select class="formfield" id="dc-action">
+      <option value="buy">Buy</option><option value="sell">Sell</option>
+      <option value="hold">Hold</option><option value="watch" selected>Watch</option>
+      <option value="stand_down">Stand down</option>
+    </select>
+    <label class="fl">Execution price</label>
+    <input class="formfield" type="number" step="0.01" id="dc-price" placeholder="Optional">
+    <label class="fl">Units</label>
+    <input class="formfield" type="number" step="0.0001" id="dc-units" placeholder="Optional">
+    <label class="fl">Notional ($)</label>
+    <input class="formfield" type="number" step="0.01" id="dc-notional" placeholder="Optional">
+    <label class="fl">% of portfolio</label>
+    <input class="formfield" type="number" step="0.01" id="dc-pct" placeholder="Optional">
+    <label class="fl">Your confidence (0–100)</label>
+    <input class="formfield" type="number" min="0" max="100" id="dc-conf" placeholder="Optional">
+    <label class="fl">Thesis</label>
+    <textarea class="formfield" id="dc-thesis" placeholder="Why this decision"></textarea>
+    <label class="fl">Invalidation</label>
+    <textarea class="formfield" id="dc-inval" placeholder="What would prove this wrong"></textarea>
+    <label class="fl">Reason for agreeing / disagreeing with the model</label>
+    <textarea class="formfield" id="dc-reason" placeholder="Optional"></textarea>
+    <div class="checkline"><input type="checkbox" id="dc-outside">
+      <label for="dc-outside">Used outside information not present in the platform</label></div>
+    <button class="go" id="dc-submit">Log decision</button>
+    <div class="errbox" id="dc-err"></div>
+    <div class="sub" id="dc-ok" style="display:none;color:var(--green)">Decision logged.</div>`;
+  document.getElementById("dc-submit").onclick = fcSubmitDecision;
+}
+
+async function fcSubmitDecision(){
+  const row = fcHorizons.find(r=>r.horizon_days===fcSelectedHorizon);
+  const err = document.getElementById("dc-err"); err.classList.remove("show");
+  const ok = document.getElementById("dc-ok"); ok.style.display = "none";
+  const btn = document.getElementById("dc-submit"); btn.disabled = true;
+  const num = id => { const v = document.getElementById(id).value.trim(); return v===""?null:Number(v); };
+  const txt = id => document.getElementById(id).value.trim() || null;
+  try{
+    await mmCall("create_decision", {
+      forecast_id: row.id,
+      action: document.getElementById("dc-action").value,
+      exec_price: num("dc-price"),
+      units: num("dc-units"),
+      notional: num("dc-notional"),
+      pct_portfolio: num("dc-pct"),
+      horizon_days: row.horizon_days,
+      user_confidence: num("dc-conf"),
+      thesis: txt("dc-thesis"),
+      invalidation: txt("dc-inval"),
+      agree_reason: txt("dc-reason"),
+      outside_info: document.getElementById("dc-outside").checked,
+    });
+    ok.style.display = "block";
+  }catch(e){
+    err.textContent = e.message; err.classList.add("show");
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+/* ---------- journal ---------- */
+async function loadJournal(){
+  const subEl = document.getElementById("jr-sub");
+  subEl.textContent = "Loading…";
+  try{
+    const r = await mmCall("list_decisions", {limit:100});
+    subEl.textContent = "Decision history and open positions.";
+    renderJournal(r.decisions||[]);
+  }catch(e){
+    subEl.textContent = e.message;
+  }
+}
+
+function jCard(d){
+  const fc = d.forecasts || {};
+  return `<div class="jcard">
+    <div class="top"><span>${esc(fc.ticker||'–')} · ${esc(d.action)}</span>
+      <span style="color:var(--dim);font-weight:400">${esc(new Date(d.created_at).toLocaleDateString())}</span></div>
+    <div class="meta">${fc.horizon_days??d.horizon_days??'–'}d horizon · model p+ ${pct0(fc.p_positive)}
+      · confidence ${esc(fc.confidence_label||'–')}</div>
+    ${d.thesis?`<div class="thesis">${esc(d.thesis)}</div>`:""}
+  </div>`;
+}
+
+function renderJournal(rows){
+  const now = Date.now();
+  const open=[], approaching=[], history=[];
+  for(const d of rows){
+    const fc = d.forecasts || {};
+    const outcome = (fc.outcomes && fc.outcomes[0]) || null;
+    if(outcome){ history.push(d); continue; }
+    const horizon = d.horizon_days ?? fc.horizon_days ?? null;
+    const evalAt = horizon!=null ? new Date(d.created_at).getTime() + horizon*86400000 : null;
+    if(evalAt!=null && evalAt - now <= 5*86400000) approaching.push(d);
+    else open.push(d);
+  }
+  document.getElementById("jr-open").innerHTML =
+    open.length ? open.map(jCard).join("") : `<div class="empty">No open decisions.</div>`;
+  document.getElementById("jr-approaching").innerHTML =
+    approaching.length ? approaching.map(jCard).join("") : `<div class="empty">Nothing approaching evaluation.</div>`;
+  document.getElementById("jr-history").innerHTML =
+    history.length ? history.map(jCard).join("") : `<div class="empty">No evaluated decisions yet — outcomes land in M4.</div>`;
+}
 </script>
 </body>
 </html>

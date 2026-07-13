@@ -146,6 +146,11 @@
   .triggerchip{display:inline-block;background:rgba(0,0,0,.05);color:var(--dim);
     font-size:11px;border-radius:999px;padding:2px 9px;margin:0 5px 5px 0}
   .outcome-line{font-size:12.5px;color:var(--dim);margin-top:4px}
+  .evidence-item{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12.5px}
+  .evidence-item .tool{font-weight:700;margin-bottom:4px}
+  .evidence-item pre{white-space:pre-wrap;word-break:break-word;color:var(--dim);font-size:11.5px;margin-top:4px}
+  .regentry{border-top:1px solid var(--line);padding:8px 0;font-size:13px}
+  .regentry:first-child{border-top:none}
 
   @media (max-width:720px){
     aside{position:fixed;left:0;top:0;bottom:0;z-index:20;transform:translateX(-105%)}
@@ -170,6 +175,8 @@
     <button data-v="scanner"><span class="ic">◎</span>Scanner</button>
     <button data-v="forecast"><span class="ic">◈</span>Forecast</button>
     <button data-v="journal"><span class="ic">▤</span>Journal</button>
+    <button data-v="scorecards"><span class="ic">◧</span>Scorecards</button>
+    <button data-v="ask"><span class="ic">?</span>Ask</button>
     <div class="navlabel">Studies</div>
     <a href="research.html"><span class="ic">⌕</span>Research</a>
     <a href="overlay.html"><span class="ic">↗</span>Extension Overlay</a>
@@ -272,6 +279,59 @@
     <div class="card"><h2>Approaching evaluation</h2><div id="jr-approaching"></div></div>
     <div class="card"><h2>History</h2><div id="jr-history"></div></div>
   </div>
+
+  <!-- SCORECARDS -->
+  <div class="view" id="view-scorecards">
+    <h1>Scorecards</h1>
+    <div class="sub" id="sca-sub">Model calibration and personal decision-judgment, computed from matured outcomes.</div>
+
+    <div class="card"><h2>Calibration</h2>
+      <div class="metricrow" id="sca-cal-summary"></div>
+      <table id="sca-cal-table"></table>
+    </div>
+    <div class="card"><h2>Stand-down value</h2><div id="sca-standdown"></div></div>
+    <div class="card"><h2>Override value</h2><table id="sca-override"></table></div>
+    <div class="card"><h2>Entry slippage</h2><table id="sca-slippage"></table></div>
+    <div class="card"><h2>Sizing discipline</h2><table id="sca-sizing"></table></div>
+    <div class="card"><h2>High-quality setups you didn't act on</h2><div id="sca-ignored"></div></div>
+    <div class="card"><h2>Chase risk</h2><div id="sca-chase"></div></div>
+
+    <div class="card">
+      <h2>Model registry</h2>
+      <div id="sca-registry"></div>
+      <label class="fl">Log a registry entry</label>
+      <select class="formfield" id="reg-status">
+        <option value="candidate">candidate</option>
+        <option value="shadow">shadow</option>
+        <option value="champion">champion</option>
+        <option value="retired">retired</option>
+      </select>
+      <input class="formfield" id="reg-version" placeholder="model_version, e.g. mm-forecast-v1.1">
+      <input class="formfield" id="reg-approver" placeholder="approver (optional)">
+      <input class="formfield" id="reg-reason" placeholder="reason (optional)">
+      <button class="go" id="reg-submit">Log entry</button>
+      <div class="errbox" id="reg-err"></div>
+    </div>
+  </div>
+
+  <!-- ASK -->
+  <div class="view" id="view-ask">
+    <h1>Ask</h1>
+    <div class="sub">Grounded Q&amp;A over your forecast and decision history — every number traces to a query result below.</div>
+    <div class="card">
+      <div style="display:flex;gap:8px">
+        <input class="formfield" id="ask-q" style="margin-bottom:0"
+          placeholder="e.g. What did the model say about SMH last month?">
+        <button class="go" id="ask-go" style="width:auto;padding:0 20px">Ask</button>
+      </div>
+      <div class="errbox" id="ask-err"></div>
+    </div>
+    <div class="spin" id="ask-spin">Thinking…</div>
+    <div id="ask-result" style="display:none">
+      <div class="card" id="ask-answer"></div>
+      <div class="card"><h2>Evidence</h2><div id="ask-evidence"></div></div>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -297,6 +357,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   side.classList.remove("open");
   if(b.dataset.v === "journal") loadJournal();
   if(b.dataset.v === "scanner") loadScanner();
+  if(b.dataset.v === "scorecards") loadScorecards();
 });
 
 /* data */
@@ -744,6 +805,238 @@ function renderJournal(rows){
   document.getElementById("jr-history").innerHTML =
     history.length ? history.map(jCard).join("") : `<div class="empty">No evaluated decisions yet — outcomes are scored once a forecast's horizon actually elapses.</div>`;
 }
+
+/* ---------- scorecards ---------- */
+const BULLISH_LABELS = new Set(["moderate_long_candidate", "high_conviction_long_candidate"]);
+const BEARISH_LABELS = new Set(["reduce_defensive_candidate"]);
+const HIGH_QUALITY_LABELS = new Set(["moderate_long_candidate", "high_conviction_long_candidate"]);
+const CHASE_RET60D_THRESHOLD = 0.25;
+
+function mean(xs){ return xs.length ? xs.reduce((a,b)=>a+b,0)/xs.length : null; }
+function stddev(xs){
+  if(xs.length < 2) return null;
+  const m = mean(xs);
+  return Math.sqrt(xs.reduce((a,b)=>a+(b-m)*(b-m),0)/(xs.length-1));
+}
+
+function calibrationBuckets(rows){
+  const edges = [0,0.2,0.4,0.6,0.8,1.0001];
+  const buckets = edges.slice(0,-1).map((lo,i)=>({lo, hi:edges[i+1], rows:[]}));
+  for(const r of rows){
+    if(r.p_positive==null) continue;
+    const b = buckets.find(b=>r.p_positive>=b.lo && r.p_positive<b.hi);
+    if(b) b.rows.push(r);
+  }
+  return buckets.map(b=>({
+    range: `${Math.round(b.lo*100)}–${Math.round(Math.min(b.hi,1)*100)}%`,
+    n: b.rows.length,
+    avg_predicted: mean(b.rows.map(r=>r.p_positive)),
+    actual_rate: b.rows.length ? mean(b.rows.map(r=>r.event_occurred?1:0)) : null,
+  }));
+}
+
+function impliedAgreement(action, recLabel){
+  const bullish = BULLISH_LABELS.has(recLabel), bearish = BEARISH_LABELS.has(recLabel);
+  if(action==="buy" && bullish) return "agree";
+  if((action==="sell"||action==="stand_down") && bearish) return "agree";
+  if(action==="buy" && bearish) return "override";
+  if((action==="sell"||action==="stand_down") && bullish) return "override";
+  return "neutral";
+}
+
+async function loadScorecards(){
+  const subEl = document.getElementById("sca-sub");
+  try{
+    const [cal, decRes, unactioned] = await Promise.all([
+      mmCall("get_calibration_data", {limit:2000}),
+      mmCall("list_decisions", {limit:300}),
+      mmCall("list_unactioned_forecasts", {limit:300}),
+    ]);
+    renderCalibration(cal.rows||[]);
+    renderUserJudgment(decRes.decisions||[], unactioned.forecasts||[]);
+    subEl.textContent = "Model calibration and personal decision-judgment, computed from matured outcomes.";
+  }catch(e){
+    subEl.textContent = e.message;
+  }
+  loadRegistry();
+}
+
+function renderCalibration(rows){
+  const matured = rows.filter(r=>r.event_occurred!=null);
+  const brierVals = rows.map(r=>r.brier).filter(v=>v!=null);
+  const llVals = rows.map(r=>r.log_loss).filter(v=>v!=null);
+  const covVals = rows.map(r=>r.interval_covered).filter(v=>v!=null);
+  const coverage = covVals.length ? covVals.filter(Boolean).length/covVals.length : null;
+
+  document.getElementById("sca-cal-summary").innerHTML = `
+    <div class="metric"><div class="v">${matured.length}</div><div class="l">Matured forecasts</div></div>
+    <div class="metric"><div class="v">${brierVals.length?mean(brierVals).toFixed(3):'–'}</div><div class="l">Mean Brier</div></div>
+    <div class="metric"><div class="v">${llVals.length?mean(llVals).toFixed(3):'–'}</div><div class="l">Mean log loss</div></div>
+    <div class="metric"><div class="v">${coverage!=null?pct0(coverage):'–'}</div><div class="l">Interval coverage</div></div>`;
+
+  const buckets = calibrationBuckets(matured);
+  document.getElementById("sca-cal-table").innerHTML =
+    `<tr><th>Predicted range</th><th>n</th><th>Avg predicted</th><th>Actual rate</th><th>Gap</th></tr>` +
+    buckets.map(b=>`<tr><td style="text-align:left">${b.range}</td><td>${b.n}</td>
+      <td>${b.avg_predicted!=null?pct0(b.avg_predicted):'–'}</td>
+      <td>${b.actual_rate!=null?pct0(b.actual_rate):'–'}</td>
+      <td>${(b.avg_predicted!=null&&b.actual_rate!=null)?pct(b.actual_rate-b.avg_predicted):'–'}</td></tr>`).join("");
+}
+
+function renderUserJudgment(decisions, unactioned){
+  const withOutcome = decisions.filter(d=>d.forecasts?.outcomes?.[0]);
+
+  // stand-down value
+  const standdowns = withOutcome.filter(d=>d.action==="stand_down");
+  const preserved = standdowns.filter(d=>d.forecasts.outcomes[0].abs_return<0);
+  const missed = standdowns.filter(d=>d.forecasts.outcomes[0].abs_return>0);
+  document.getElementById("sca-standdown").innerHTML = standdowns.length ? `
+    <div class="metricrow">
+      <div class="metric"><div class="v">${standdowns.length}</div><div class="l">Stand-downs evaluated</div></div>
+      <div class="metric"><div class="v">${preserved.length}</div><div class="l">Preserved capital</div></div>
+      <div class="metric"><div class="v">${missed.length}</div><div class="l">Missed upside</div></div>
+      <div class="metric"><div class="v">${preserved.length?pct(mean(preserved.map(d=>d.forecasts.outcomes[0].abs_return))):'–'}</div><div class="l">Avg avoided loss</div></div>
+      <div class="metric"><div class="v">${missed.length?pct(mean(missed.map(d=>d.forecasts.outcomes[0].abs_return))):'–'}</div><div class="l">Avg missed gain</div></div>
+    </div>` : `<div class="empty">No matured stand-down decisions yet.</div>`;
+
+  // override value
+  const buckets = {agree:[], override:[], neutral:[]};
+  for(const d of withOutcome){
+    const b = impliedAgreement(d.action, d.forecasts.evidence_json?.recommendation_label);
+    buckets[b].push(d.forecasts.outcomes[0].excess_return);
+  }
+  document.getElementById("sca-override").innerHTML =
+    `<tr><th>Bucket</th><th>n</th><th>Avg excess return</th></tr>` +
+    ["agree","override","neutral"].map(k=>{
+      const vals = buckets[k].filter(v=>v!=null);
+      return `<tr><td style="text-align:left">${k}</td><td>${buckets[k].length}</td>
+        <td>${vals.length?pct(mean(vals)):'–'}</td></tr>`;
+    }).join("");
+
+  // entry slippage
+  const withSlip = decisions.filter(d=>d.exec_price!=null && d.forecasts?.effective_price!=null);
+  const byAction = {};
+  for(const d of withSlip){
+    const slip = d.exec_price/d.forecasts.effective_price - 1;
+    (byAction[d.action] ??= []).push(slip);
+  }
+  const actions = Object.keys(byAction);
+  document.getElementById("sca-slippage").innerHTML = actions.length ?
+    `<tr><th>Action</th><th>n</th><th>Avg slippage</th></tr>` +
+    actions.map(a=>`<tr><td style="text-align:left">${a}</td><td>${byAction[a].length}</td>
+      <td>${pct(mean(byAction[a]))}</td></tr>`).join("")
+    : `<tr><td class="empty">No decisions with both an execution price and a forecast price yet.</td></tr>`;
+
+  // sizing discipline
+  const byTier = {};
+  for(const d of decisions){
+    if(d.pct_portfolio==null || !d.forecasts?.confidence_label) continue;
+    (byTier[d.forecasts.confidence_label] ??= []).push(d.pct_portfolio);
+  }
+  const tiers = Object.keys(byTier);
+  document.getElementById("sca-sizing").innerHTML = tiers.length ?
+    `<tr><th>Confidence tier</th><th>n</th><th>Avg % portfolio</th><th>Std dev</th></tr>` +
+    tiers.map(t=>{
+      const sd = stddev(byTier[t]);
+      return `<tr><td style="text-align:left">${t}</td><td>${byTier[t].length}</td>
+        <td>${mean(byTier[t]).toFixed(2)}%</td><td>${sd!=null?sd.toFixed(2)+'%':'–'}</td></tr>`;
+    }).join("")
+    : `<tr><td class="empty">No sized decisions with a linked confidence tier yet.</td></tr>`;
+
+  // ignored high-quality setups
+  const ignored = unactioned.filter(f=>HIGH_QUALITY_LABELS.has(f.evidence_json?.recommendation_label));
+  document.getElementById("sca-ignored").innerHTML = ignored.length ? `
+    <div class="sub" style="margin-bottom:8px">${ignored.length} moderate/high-conviction setup(s) with no logged decision.</div>
+    ${ignored.slice(0,10).map(f=>`<div class="jcard"><div class="top"><span>${esc(f.ticker)}</span>
+      <span style="color:var(--dim);font-weight:400">${esc((f.as_of_ts||'').slice(0,10))}</span></div>
+      <div class="meta">${esc(f.evidence_json?.recommendation_label||'')} · ${f.horizon_days}d</div></div>`).join("")}`
+    : `<div class="empty">No ignored high-quality setups on file.</div>`;
+
+  // chase flag
+  const buys = decisions.filter(d=>d.action==="buy" && d.forecasts?.features_json?.query_features?.ret_60d!=null);
+  const chased = buys.filter(d=>d.forecasts.features_json.query_features.ret_60d > CHASE_RET60D_THRESHOLD);
+  document.getElementById("sca-chase").innerHTML = buys.length ? `
+    <div class="metricrow">
+      <div class="metric"><div class="v">${chased.length} / ${buys.length}</div><div class="l">Buys after a large run-up (&gt;${Math.round(CHASE_RET60D_THRESHOLD*100)}% in 60d)</div></div>
+    </div>` : `<div class="empty">No buy decisions with trailing-return data yet.</div>`;
+}
+
+async function loadRegistry(){
+  const el = document.getElementById("sca-registry");
+  try{
+    const r = await mmCall("list_registry_entries", {limit:50});
+    const entries = r.entries||[];
+    el.innerHTML = entries.length ? entries.map(e=>`
+      <div class="regentry"><b>${esc(e.model_version)}</b> — ${esc(e.status)}
+        <span style="color:var(--dim)"> · ${esc(new Date(e.created_at).toLocaleDateString())}</span>
+        ${e.approver?` · approver: ${esc(e.approver)}`:""}
+        ${e.reason?`<div class="sub" style="margin:2px 0 0">${esc(e.reason)}</div>`:""}
+      </div>`).join("") : `<div class="empty">No registry entries yet — challenger training is manual/offline (M5 scope: table only).</div>`;
+  }catch(e){
+    el.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+
+document.getElementById("reg-submit").onclick = async () => {
+  const err = document.getElementById("reg-err");
+  err.classList.remove("show");
+  const version = document.getElementById("reg-version").value.trim();
+  if(!version){ err.textContent = "model_version is required."; err.classList.add("show"); return; }
+  try{
+    await mmCall("create_registry_entry", {
+      model_version: version,
+      status: document.getElementById("reg-status").value,
+      approver: document.getElementById("reg-approver").value.trim() || null,
+      reason: document.getElementById("reg-reason").value.trim() || null,
+    });
+    document.getElementById("reg-version").value = "";
+    document.getElementById("reg-approver").value = "";
+    document.getElementById("reg-reason").value = "";
+    loadRegistry();
+  }catch(e){
+    err.textContent = e.message; err.classList.add("show");
+  }
+};
+
+/* ---------- ask ---------- */
+async function askQuestion(){
+  const q = document.getElementById("ask-q").value.trim();
+  const err = document.getElementById("ask-err");
+  err.classList.remove("show");
+  document.getElementById("ask-result").style.display = "none";
+  if(!q){ err.textContent = "Type a question first."; err.classList.add("show"); return; }
+  const pass = document.getElementById("pass").value.trim() || localStorage.getItem("pm_pass") || "";
+  if(!pass){ err.textContent = "Set the app passphrase in the sidebar first."; err.classList.add("show"); return; }
+  const btn = document.getElementById("ask-go");
+  btn.disabled = true;
+  document.getElementById("ask-spin").classList.add("show");
+  try{
+    const r = await fetch(MM_SEARCH_URL, {method:"POST",
+      headers:{"Content-Type":"application/json","x-app-key":pass},
+      body: JSON.stringify({question:q})});
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error === "bad passphrase"
+      ? "Passphrase rejected — check the sidebar passphrase vs Supabase secret."
+      : (d.error||"Request failed") + (d.detail?": "+String(d.detail).slice(0,200):""));
+    document.getElementById("ask-answer").innerHTML =
+      `<div style="white-space:pre-wrap">${esc(d.answer||"(no answer)")}</div>`;
+    const ev = d.evidence||[];
+    document.getElementById("ask-evidence").innerHTML = ev.length ?
+      ev.map(e=>`<div class="evidence-item"><div class="tool">${esc(e.tool)}</div>
+        <div class="sub" style="margin-bottom:0">args: ${esc(JSON.stringify(e.args))}</div>
+        <pre>${esc(JSON.stringify(e.result_summary, null, 2))}</pre></div>`).join("")
+      : `<div class="empty">No tool calls were needed to answer this.</div>`;
+    document.getElementById("ask-result").style.display = "block";
+  }catch(e){
+    err.textContent = e.message; err.classList.add("show");
+  }finally{
+    btn.disabled = false;
+    document.getElementById("ask-spin").classList.remove("show");
+  }
+}
+const MM_SEARCH_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/mm-search";
+document.getElementById("ask-go").onclick = askQuestion;
+document.getElementById("ask-q").addEventListener("keydown", e=>{ if(e.key==="Enter") askQuestion(); });
 </script>
 </body>
 </html>

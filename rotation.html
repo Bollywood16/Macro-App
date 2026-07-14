@@ -138,9 +138,11 @@ async function load(){
   document.getElementById("asof").textContent =
     "As of "+D.current.as_of+" · generated "+D.meta.generated_utc;
   document.getElementById("lead").textContent = D.current.leadership;
+  const WARN_REGIME_VALUES = ["stressed","widening","rising",
+    "stretched_short","stretched_long","elevated_fear","elevated_greed"];
   document.getElementById("regimes").innerHTML =
     Object.entries(D.current.regimes).map(([k,v]) =>
-      `<span class="chip ${["stressed","widening","rising"].includes(v)?"warn":
+      `<span class="chip ${WARN_REGIME_VALUES.includes(v)?"warn":
         (v==="unknown"?"":"on")}">${k}: ${v}</span>`).join("");
   if(D.hmm_regime?.current){
     document.getElementById("hmm-block").style.display = "block";

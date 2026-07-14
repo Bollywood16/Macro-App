@@ -45,6 +45,7 @@ ROOT = os.path.dirname(HERE)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import regime_hmm  # noqa: E402  (data-driven comparison regime, fail-soft)
+import positioning_adapters  # noqa: E402  (Stage 2b: CFTC/CBOE, fail-soft)
 
 CONFIG_PATH = os.path.join(HERE, "rotation_config.json")
 OUTPUT_PATH = os.path.join(ROOT, "data", "rotation_digest.json")
@@ -534,6 +535,9 @@ def main():
         print(f"[warn] hmm_regime failed: {e}")
         hmm_regime = None
 
+    cftc_positioning = positioning_adapters.fetch_cftc_positioning()
+    cboe_putcall = positioning_adapters.fetch_cboe_putcall()
+
     panel = build_panel(cfg, prices)
     lead, lead_spread = leadership_series(panel, cfg)
     eps = build_episodes(panel, cfg, lead, vix, tnx, oas)
@@ -563,6 +567,11 @@ def main():
                 "groups.",
                 "Claims are mined; the searched count is shown. Low "
                 "confidence = probably noise.",
+                "positioning (CFTC) and options (CBOE put/call) regime "
+                "dimensions are CURRENT SNAPSHOTS only -- no historical "
+                "time series is wired up yet, so unlike vix/rates/credit "
+                "they are not conditioned on in claims and carry no n or "
+                "confidence. Treat them as context, not evidence.",
             ],
         },
         "current": {
@@ -574,10 +583,15 @@ def main():
                 "vix": series_regime_vix(vix, today),
                 "rates": series_regime_rates(tnx, today),
                 "credit": series_regime_credit(oas, today),
+                "positioning": (cftc_positioning["positioning_label"]
+                                 if cftc_positioning else "unknown"),
+                "options": cboe_putcall["regime"] if cboe_putcall else "unknown",
             },
         },
         "run_durations": run_durations,
         "hmm_regime": hmm_regime,
+        "cftc_positioning": cftc_positioning,
+        "cboe_putcall": cboe_putcall,
         "rs_table": rs_table(panel, cfg),
         "relative_curves": relative_curves(panel, cfg),
         "claims": claims[:15],

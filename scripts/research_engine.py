@@ -79,6 +79,12 @@ TRIGGERS = {
                  "desc": "≥30% above the 200-day after a ≥40% 6-mo rally"},
     "strength": {"label": "Buying strength near highs",
                  "desc": "within 2% of the 20-day high after a ≥30% 6-mo rally"},
+    "tsmom_pos": {"label": "Time-series momentum: positive",
+                  "desc": "trailing 12-month return > 0% "
+                          "(Moskowitz-Ooi-Pedersen sign rule)"},
+    "tsmom_neg": {"label": "Time-series momentum: negative",
+                  "desc": "trailing 12-month return <= 0% "
+                          "(Moskowitz-Ooi-Pedersen sign rule)"},
 }
 SAMPLINGS = {
     "all":     "every qualifying day (63d cooldown) — autocorrelated",
@@ -142,6 +148,10 @@ def indicators(close: pd.Series) -> pd.DataFrame:
     df["ma200"] = close.rolling(200).mean()
     df["ext200"] = close / df["ma200"] - 1
     df["trail126"] = close / close.shift(126) - 1
+    # Moskowitz-Ooi-Pedersen trailing 12-month return, for the tsmom_pos/
+    # tsmom_neg triggers below. Raw trailing return, not excess-of-T-bill —
+    # see the matching comment in forecast_engine.py's mom_12m feature.
+    df["trail252"] = close / close.shift(252) - 1
     df["hi20"] = close.rolling(20).max()
     df["from_hi20"] = close / df["hi20"] - 1
     df["rsi14"] = rsi(close)
@@ -217,6 +227,10 @@ def trigger_mask(df: pd.DataFrame, trigger: str) -> pd.Series:
         return (df["ext200"] >= 0.30) & (df["trail126"] >= 0.40)
     if trigger == "strength":
         return (df["from_hi20"] >= -0.02) & (df["trail126"] >= 0.30)
+    if trigger == "tsmom_pos":
+        return df["trail252"] > 0
+    if trigger == "tsmom_neg":
+        return df["trail252"] <= 0
     raise ValueError(trigger)
 
 

@@ -42,6 +42,10 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import regime_hmm  # noqa: E402  (data-driven comparison regime, fail-soft)
+
 CONFIG_PATH = os.path.join(HERE, "rotation_config.json")
 OUTPUT_PATH = os.path.join(ROOT, "data", "rotation_digest.json")
 
@@ -417,6 +421,14 @@ def main():
         tnx = pd.Series(dtype=float)
     oas = fetch_hy_oas()
 
+    # Fail-soft: same contract as every other optional data source here.
+    try:
+        hmm_regime = regime_hmm.compute_hmm_regime(prices[cfg["benchmark"]],
+                                                     vix, oas)
+    except Exception as e:
+        print(f"[warn] hmm_regime failed: {e}")
+        hmm_regime = None
+
     panel = build_panel(cfg, prices)
     lead = leadership_series(panel, cfg)
     eps = build_episodes(panel, cfg, lead, vix, tnx, oas)
@@ -456,6 +468,7 @@ def main():
                 "credit": series_regime_credit(oas, today),
             },
         },
+        "hmm_regime": hmm_regime,
         "rs_table": rs_table(panel, cfg),
         "relative_curves": relative_curves(panel, cfg),
         "claims": claims[:15],

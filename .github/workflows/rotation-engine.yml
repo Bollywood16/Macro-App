@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install yfinance pandas
+        run: pip install yfinance pandas numpy hmmlearn
       - name: Run rotation engine
         run: python scripts/rotation_engine.py
       - name: Commit dataset if changed

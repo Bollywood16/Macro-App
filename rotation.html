@@ -79,6 +79,10 @@
     <span class="chip big" id="lead"></span>
     <div class="chips" id="regimes"></div>
     <div class="sub" style="margin-top:10px" id="proxies"></div>
+    <div id="hmm-block" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+      <div class="sub" style="margin-bottom:6px">Data-driven comparison (fitted HMM, not a hand rule) — see note for what it does and doesn't do</div>
+      <div class="chips" id="hmm-regime"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -117,6 +121,7 @@
 </div>
 
 <script>
+const esc = s => { const d=document.createElement("div"); d.textContent=s??""; return d.innerHTML; };
 const PALETTE = ["#0071E3","#248A3D","#D70015","#C04A00","#5E5CE6","#00A3A3",
   "#B25000","#7D7AFF","#2E8B57","#A0524D","#4682B4","#8E6C0A","#666","#9932CC"];
 const fmt = v => (v===null||v===undefined)?"–":(v>0?"+":"")+Number(v).toFixed(1)+"%";
@@ -137,6 +142,17 @@ async function load(){
     Object.entries(D.current.regimes).map(([k,v]) =>
       `<span class="chip ${["stressed","widening","rising"].includes(v)?"warn":
         (v==="unknown"?"":"on")}">${k}: ${v}</span>`).join("");
+  if(D.hmm_regime?.current){
+    document.getElementById("hmm-block").style.display = "block";
+    const hr = D.hmm_regime;
+    const probs = Object.entries(hr.current.probabilities)
+      .sort((a,b)=>b[1]-a[1])
+      .map(([label,p])=>`<span class="chip ${label===hr.current.state_label?"on":""}"
+        title="${esc(hr.note)}">${label}: ${Math.round(p*100)}%</span>`).join("");
+    document.getElementById("hmm-regime").innerHTML = probs +
+      `<span class="chip" title="Out-of-sample avg log-likelihood/row across ${hr.walkforward_diagnostic?.n_folds ?? 0} purged walk-forward folds">
+        state: ${hr.n_states} · as of ${hr.as_of}</span>`;
+  }
   document.getElementById("proxies").textContent =
     "Proxies: vix — "+D.meta.proxies.vix+"; rates — "+D.meta.proxies.rates+".";
 

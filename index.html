@@ -86,8 +86,9 @@
   .break{color:var(--red);font-size:13px}
   .thinking{color:var(--dim);font-size:13.5px;padding:8px 2px}
   .composer{display:flex;gap:8px;padding-top:10px}
-  .composer select{border:1px solid var(--line);border-radius:12px;background:var(--card);
-    font:600 13px -apple-system,sans-serif;padding:0 10px;max-width:130px}
+  .composer select,.composer input.ticker-focus{border:1px solid var(--line);border-radius:12px;
+    background:var(--card);font:600 13px -apple-system,sans-serif;padding:0 10px;
+    max-width:130px;flex:0 0 auto;text-transform:uppercase}
   .composer .box{flex:1;display:flex;background:var(--card);border:1px solid var(--line);
     border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
   .composer input{flex:1;border:0;background:transparent;padding:13px 14px;
@@ -204,7 +205,8 @@
     </div>
     <div class="errline" id="chat-err"></div>
     <div class="composer">
-      <select id="focus"><option value="">All assets</option></select>
+      <input id="focus" class="ticker-focus" list="ticker-suggest"
+        placeholder="All assets" autocomplete="off" spellcheck="false">
       <div class="box">
         <input id="q" placeholder="Ask about the current setup…" autocomplete="off">
         <button id="send">Ask</button>
@@ -215,6 +217,7 @@
   <!-- SECTORS -->
   <div class="view" id="view-sectors">
     <h1>Sectors</h1><div class="sub" id="sec-asof"></div>
+    <div class="sub" id="hmm-regime" style="display:none"></div>
     <div class="card"><h2>Relative strength vs SPY</h2><table id="sec-table"></table></div>
     <div class="card"><h2>Relative performance — trailing year</h2>
       <div class="chartwrap"><canvas id="sec-chart"></canvas></div></div>
@@ -252,18 +255,23 @@
       regime-conditioned base rate. Confidence is computed, never invented.</div>
     <div class="card">
       <h2>Analyze</h2>
-      <select class="formfield" id="fc-ticker"></select>
+      <input class="formfield" id="fc-ticker" list="ticker-suggest"
+        placeholder="Ticker, e.g. SMH" autocomplete="off" spellcheck="false"
+        style="text-transform:uppercase">
       <input class="formfield" type="number" step="0.01" id="fc-price"
         placeholder="Manual price (optional — overrides today's close)">
       <button class="go" id="fc-go">Analyze</button>
       <div class="errbox" id="fc-err"></div>
     </div>
+    <datalist id="ticker-suggest"></datalist>
     <div class="spin" id="fc-spin">Running the forecast engine — this can take up to a minute…</div>
     <div class="card" id="fc-timeout" style="display:none">
       Still running after 90s. Check the
       <a href="https://github.com/Bollywood16/Macro-App/actions/workflows/forecast-engine.yml"
-        target="_blank" rel="noopener">Actions run</a> directly, then click Analyze
-      again once it finishes to pull the result in.
+        target="_blank" rel="noopener">Actions run</a> directly — a run that finished
+      with no forecast usually means yfinance has no usable price history for that
+      ticker (delisted, too new, or a typo) — then click Analyze again once it
+      finishes to pull the result in.
     </div>
     <div id="fc-result" style="display:none">
       <div class="card" id="fc-card"></div>
@@ -361,6 +369,29 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
 });
 
 /* data */
+// Free-text ticker inputs (Forecast tab + chat focus) share one <datalist>
+// of suggestions drawn from every known-universe source. The input itself
+// accepts any ticker — this list is discovery, not a restriction.
+const tickerSuggestSet = new Set();
+function addTickerSuggestions(entries){
+  const dl = document.getElementById("ticker-suggest");
+  if(!dl) return;
+  for(const {ticker,label} of entries){
+    if(!ticker || tickerSuggestSet.has(ticker)) continue;
+    tickerSuggestSet.add(ticker);
+    dl.insertAdjacentHTML("beforeend",
+      `<option value="${ticker}">${ticker} — ${esc(label||ticker)}</option>`);
+  }
+}
+const TICKER_RE = /^[A-Z]{1,6}(\.[A-Z])?$/;
+function normalizeTickerInput(el){
+  const start = el.selectionStart, end = el.selectionEnd;
+  el.value = el.value.toUpperCase();
+  if(start!=null) el.setSelectionRange(start, end);
+}
+document.getElementById("focus").addEventListener("input", e=>normalizeTickerInput(e.target));
+document.getElementById("fc-ticker").addEventListener("input", e=>normalizeTickerInput(e.target));
+
 (async ()=>{
   try{
     const r = await fetch("data/rotation_digest.json",{cache:"no-store"});
@@ -369,9 +400,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   try{
     const r = await fetch("data/research_digest.json",{cache:"no-store"});
     if(r.ok){ const d = await r.json();
-      const sel=document.getElementById("focus");
-      for(const [t,a] of Object.entries(d.assets))
-        sel.insertAdjacentHTML("beforeend",`<option value="${t}">${a.label}</option>`); }
+      addTickerSuggestions(Object.entries(d.assets).map(([t,a])=>({ticker:t,label:a.label}))); }
   }catch{}
 })();
 
@@ -408,6 +437,14 @@ function renderRotation(){
   const asof = `As of ${ROT.current.as_of} · leadership: ${ROT.current.leadership}`;
   document.getElementById("sec-asof").textContent = asof;
   document.getElementById("size-asof").textContent = asof;
+  const hmmEl = document.getElementById("hmm-regime");
+  if(ROT.hmm_regime?.current){
+    const hr = ROT.hmm_regime;
+    hmmEl.style.display = "block";
+    hmmEl.title = hr.note;
+    hmmEl.textContent = `Data-driven comparison (fitted HMM, not a hand rule): `+
+      `${hr.current.state_label} (${Math.round(hr.current.probabilities[hr.current.state_label]*100)}% prob.)`;
+  }
   document.getElementById("sec-table").innerHTML = tableHTML(rsRows(false));
   document.getElementById("size-table").innerHTML = tableHTML(rsRows(true));
   curveChart("sec-chart", false);
@@ -432,9 +469,14 @@ const thread = document.getElementById("thread");
 const esc = s => { const d=document.createElement("div"); d.textContent=s??""; return d.innerHTML; };
 
 function aiCard(d){
-  let h = `<div class="hl">${esc(d.headline||"—")}</div>`;
+  let h = "";
+  if(d.headline === "Synthesis (unstructured)"){
+    h += `<div class="break" style="margin-bottom:8px;font-weight:600">`+
+      `⚠ The model didn't return a structured synthesis — showing raw output below.</div>`;
+  }
+  h += `<div class="hl">${esc(d.headline||"—")}</div>`;
   for(const p of d.perspectives||[]){
-    h += `<span class="stance">${esc(p.stance)}</span><p>${esc(p.thesis)}</p>`;
+    h += `<span class="stance">${esc(p.stance)}</span><p>${esc(p.thesis)||"<em>(no content returned)</em>"}</p>`;
     if(p.evidence?.length) h += `<div class="klabel">Evidence</div><ul>`+
       p.evidence.map(e=>`<li>${esc(e)}</li>`).join("")+`</ul>`;
     if(p.confidence_basis) h += `<div class="klabel">Confidence basis</div><p style="color:var(--dim);font-size:13px">${esc(p.confidence_basis)}</p>`;
@@ -451,12 +493,19 @@ function aiCard(d){
 
 async function send(){
   const q = document.getElementById("q").value.trim();
+  const focusEl = document.getElementById("focus");
+  const focus = focusEl.value.trim().toUpperCase();
+  focusEl.value = focus;
   const pass = document.getElementById("pass").value.trim()
     || localStorage.getItem("pm_pass") || "";
   const err = document.getElementById("chat-err");
   err.textContent = "";
   if(!q) return;
   if(!pass){ err.textContent="Set the app passphrase in the sidebar first."; return; }
+  if(focus && !TICKER_RE.test(focus)){
+    err.textContent = "Focus ticker doesn't look valid — letters only, 1-6 characters (e.g. SMH, BRK.B), or leave it blank for all assets.";
+    return;
+  }
   document.getElementById("greeting")?.remove();
   thread.insertAdjacentHTML("beforeend",
     `<div class="msg user"><div class="bubble">${esc(q)}</div></div>
@@ -467,7 +516,7 @@ async function send(){
   try{
     const r = await fetch(FN_URL,{method:"POST",
       headers:{"Content-Type":"application/json","x-app-key":pass},
-      body:JSON.stringify({focus:document.getElementById("focus").value||null,
+      body:JSON.stringify({focus:focus||null,
         question:q})});
     const d = await r.json();
     if(!r.ok||d.error) throw new Error(d.error==="bad passphrase"
@@ -523,28 +572,24 @@ async function mmCall(op, payload){
 }
 
 async function loadUniverse(){
-  const sel = document.getElementById("fc-ticker");
+  // Suggestions only — the Forecast ticker field accepts any yfinance ticker,
+  // not just this configured batch/scanner universe (which stays unchanged).
   try{
     const [u,r] = await Promise.all([
       fetch("scripts/universe_config.json",{cache:"no-store"}).then(x=>x.json()),
       fetch("scripts/rotation_config.json",{cache:"no-store"}).then(x=>x.json()),
     ]);
-    const seen = new Set(), merged = [];
-    for(const a of [...u.assets, ...r.sectors, ...r.size_style]){
-      if(seen.has(a.ticker)) continue;
-      seen.add(a.ticker); merged.push(a);
-    }
-    sel.innerHTML = merged.map(a=>`<option value="${a.ticker}">${a.ticker} — ${esc(a.label)}</option>`).join("");
-  }catch(e){
-    sel.innerHTML = `<option value="">Universe unavailable — reload the page</option>`;
-  }
+    addTickerSuggestions([...u.assets, ...r.sectors, ...r.size_style]
+      .map(a=>({ticker:a.ticker,label:a.label})));
+  }catch(e){ /* suggestions are a nicety — free-text entry still works */ }
 }
 loadUniverse();
 
 let fcHorizons = null, fcSelectedHorizon = 5;
 
 async function fcAnalyze(){
-  const ticker = document.getElementById("fc-ticker").value;
+  const ticker = document.getElementById("fc-ticker").value.trim().toUpperCase();
+  document.getElementById("fc-ticker").value = ticker;
   const priceRaw = document.getElementById("fc-price").value.trim();
   const price = priceRaw ? Number(priceRaw) : null;
   const err = document.getElementById("fc-err");
@@ -552,7 +597,11 @@ async function fcAnalyze(){
   const btn = document.getElementById("fc-go");
   document.getElementById("fc-result").style.display = "none";
   document.getElementById("fc-timeout").style.display = "none";
-  if(!ticker){ err.textContent = "Pick a ticker."; err.classList.add("show"); return; }
+  if(!ticker){ err.textContent = "Enter a ticker."; err.classList.add("show"); return; }
+  if(!TICKER_RE.test(ticker)){
+    err.textContent = "That doesn't look like a ticker — letters only, 1-6 characters (e.g. SMH, BRK.B).";
+    err.classList.add("show"); return;
+  }
   btn.disabled = true;
   document.getElementById("fc-spin").classList.add("show");
   try{
@@ -628,6 +677,13 @@ function fcRenderCard(){
     <div class="metric"><div class="v">${row.n_independent??'–'}</div><div class="l">Independent episodes</div></div>
     <div class="metric"><div class="v">${esc(row.confidence_label||'–')} (${row.confidence_score!=null?Math.round(row.confidence_score*100)+'%':'–'})</div><div class="l">Confidence</div></div>
   </div>`;
+  const vm = ev.vol_management || {};
+  if(vm.realized_vol_21d_annualized!=null){
+    h += `<div class="metricrow">
+      <div class="metric"><div class="v">${(vm.realized_vol_21d_annualized*100).toFixed(1)}%</div><div class="l">21d realized vol (ann.)</div></div>
+      <div class="metric"><div class="v">${vm.expected_return_per_unit_vol!=null?vm.expected_return_per_unit_vol.toFixed(2):'–'}</div><div class="l">Return per unit vol (${row.horizon_days}d)</div></div>
+    </div>`;
+  }
   if(ev.why_it_triggered?.length) h += `<div class="klabel">Why it triggered</div><ul class="bl">`+
     ev.why_it_triggered.map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
   h += `<div class="klabel">Regime</div><div class="sub" style="margin-bottom:0">

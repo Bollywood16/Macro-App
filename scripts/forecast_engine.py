@@ -101,8 +101,10 @@ MODEL_VERSION = "mm-forecast-v1.0-analog+regime-baserate"
 
 FEATURE_FIELDS = [
     "ret_1d", "ret_5d", "ret_20d", "ret_60d", "ret_120d", "rsi14",
-    "dist_ma50", "dist_ma200", "drawdown_252", "rel_spy_63d",
+    "dist_ma50", "dist_ma200", "drawdown_252", "rel_spy_63d", "vol_21d",
+    "mom_12m",
 ]
+TRADING_DAYS_YEAR = 252
 
 LABEL_TEXT = {
     "no_reliable_signal":
@@ -172,6 +174,20 @@ def build_feature_frame(close: pd.Series, spy_close: pd.Series) -> pd.DataFrame:
     df["drawdown_252"] = close / df["hi252"] - 1
     spy_aligned = spy_close.reindex(close.index).ffill()
     df["rel_spy_63d"] = close.pct_change(63) - spy_aligned.pct_change(63)
+    # Moreira-Muir: realized vol is far more persistent/predictable than
+    # expected return, so a 21d trailing realized-vol estimate is a
+    # reasonable proxy for near-term risk. Annualized (sqrt(252)) so it's
+    # comparable across horizons via sqrt-time scaling at the call site.
+    df["vol_21d"] = close.pct_change().rolling(21).std() * math.sqrt(TRADING_DAYS_YEAR)
+    # Moskowitz-Ooi-Pedersen time-series momentum: trailing 12-month return.
+    # TSMOM sizes by the SIGN of an asset's own past return, not its return
+    # relative to other assets (that's cross-sectional momentum, a different
+    # effect, not implemented here). The paper uses return in excess of the
+    # T-bill rate; we don't carry a risk-free series, and at ~12m horizons
+    # the T-bill rate is a small, roughly constant offset relative to typical
+    # equity/ETF return dispersion, so raw trailing return is used as an
+    # explicit simplification of "excess" (documented here, not silent).
+    df["mom_12m"] = close.pct_change(252)
     return df
 
 
@@ -362,6 +378,13 @@ def build_drivers(ticker, query, regimes, intraday_proxy):
         pos = "above" if query["dist_ma200"] >= 0 else "below"
         b.append(f"{ticker} is {pos} its 200-day average by "
                   f"{query['dist_ma200'] * 100:+.1f}%.")
+    if pd.notna(query.get("vol_21d")):
+        b.append(f"21-day realized volatility (annualized) is "
+                  f"{query['vol_21d'] * 100:.1f}%.")
+    if pd.notna(query.get("mom_12m")):
+        d = "positive" if query["mom_12m"] >= 0 else "negative"
+        b.append(f"Trailing 12-month time-series momentum is {d} "
+                  f"({query['mom_12m'] * 100:+.1f}%).")
     b.append(f"Credit spreads (HY OAS, 63d) are {regimes[1]}.")
     if ticker != BENCHMARK and pd.notna(query.get("rel_spy_63d")):
         d = "outperforming" if query["rel_spy_63d"] >= 0 else "underperforming"
@@ -535,6 +558,9 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         "distribution_shift": distribution_shift,
     }
 
+    vol_21d_now = query.get("vol_21d")
+    has_vol = pd.notna(vol_21d_now) and vol_21d_now > 0
+
     created_forecast_ids = []
     for h in HORIZONS:
         ens = horizon_rows[h]["ensemble"]
@@ -547,6 +573,18 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         else:
             conf_h, conf_label_h = 0.0, "low"
 
+        # Moreira-Muir vol-managed signal: scale the horizon's median expected
+        # return by realized vol scaled (sqrt-time) to that same horizon, so
+        # horizons are comparable as a reward-per-unit-of-risk figure. A big
+        # edge during an elevated-vol stretch nets a smaller ratio here than
+        # the same edge during a calm stretch — vol itself is the
+        # predictable/actionable part per Moreira-Muir, expected return isn't.
+        return_per_unit_vol = None
+        if ens and has_vol:
+            sigma_h = float(vol_21d_now) * math.sqrt(h / TRADING_DAYS_YEAR)
+            if sigma_h > 0:
+                return_per_unit_vol = round(ens["q50"] / sigma_h, 4)
+
         evidence_json = {
             "recommendation_label": rec_label,
             "recommendation_basis_horizon_days": 5,
@@ -558,6 +596,12 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
             "regime_episode_count": len(regime_pos),
             "regime_match_depth": regime_depth,
             "ensemble_mean_excess_return": ens.get("mean_excess_return") if ens else None,
+            "vol_management": {
+                "realized_vol_21d_annualized": (
+                    round(float(vol_21d_now), 4) if has_vol else None),
+                "horizon_days": h,
+                "expected_return_per_unit_vol": return_per_unit_vol,
+            },
             "sub_models": {
                 "analog": horizon_rows[h]["analog"],
                 "regime_base_rate": horizon_rows[h]["regime"],
@@ -594,6 +638,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         "forecast_ids": created_forecast_ids, "horizon_rows": horizon_rows,
         "drivers": drivers, "invalidation_risks": invalidation_risks,
         "warnings": warnings, "regime": current_regime,
+        "vol_21d": round(float(vol_21d_now), 4) if has_vol else None,
     }
 
 
@@ -613,6 +658,12 @@ def print_recommendation_card(result):
         print(f"Median expected return: {ens['q50'] * 100:+.1f}%")
         print(f"20th-80th percentile: {ens['q20'] * 100:+.1f}% to "
               f"{ens['q80'] * 100:+.1f}%")
+        if result.get("vol_21d") is not None:
+            sigma_5d = result["vol_21d"] * math.sqrt(5 / TRADING_DAYS_YEAR)
+            rpuv = ens["q50"] / sigma_5d if sigma_5d > 0 else None
+            print(f"21d realized vol (annualized): {result['vol_21d'] * 100:.1f}%"
+                  + (f" | return per unit vol (5d): {rpuv:+.2f}"
+                     if rpuv is not None else ""))
         print(f"Expected maximum adverse excursion: "
               f"{ens['expected_mae'] * 100:+.1f}%")
         print(f"Independent historical episodes: {ens['n']}")
@@ -682,6 +733,15 @@ def main():
                           vix, oas, args.price if on_demand else None,
                           market_status, args.dry_run)
         if on_demand:
+            if not result:
+                # A silent no-op run shows green in Actions and leaves the
+                # app UI stuck polling until it times out at 90s with no
+                # explanation. Fail loudly instead — an on-demand ticker
+                # with no usable yfinance history (delisted, too new, or a
+                # typo) is a clean, diagnosable error, not "still running".
+                print(f"[error] no forecast produced for {t}: yfinance has "
+                      f"no usable price history (need 260+ trading days).")
+                return 1
             print_recommendation_card(result)
         elif result:
             ens = result["primary_horizon"]["ensemble"]

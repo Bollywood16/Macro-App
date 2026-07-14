@@ -1,0 +1,14 @@
+project_id = "anzbpxqvibgpxnwgyqoc"
+
+[functions.smooth-service]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/smooth-service/pm-synthesis.ts"
+
+[functions.mm-journal]
+enabled = true
+verify_jwt = false
+
+[functions.mm-search]
+enabled = true
+verify_jwt = true

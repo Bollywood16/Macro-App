@@ -140,24 +140,32 @@ def group_spread(panel, members, bench, i, n=63):
 
 
 def leadership_series(panel, cfg):
+    """Returns (labels, spreads): the leadership label per day, and the
+    signed group_spread (percentage points) of whichever group produced
+    that label — the numeric magnitude behind the categorical tag, exposed
+    so downstream consumers (e.g. forecast_engine's rotation-context
+    feature) get a continuous value instead of just the string."""
     bench = cfg["benchmark"]
     thr = cfg["leadership_threshold_pct"]
-    labels = []
+    labels, spreads_out = [], []
     for i in range(len(panel)):
         spreads = {g: group_spread(panel, m, bench, i)
                    for g, m in cfg["groups"].items()}
         spreads = {g: v for g, v in spreads.items() if v is not None}
         if not spreads:
             labels.append("unknown")
+            spreads_out.append(None)
             continue
         g, v = max(spreads.items(), key=lambda kv: abs(kv[1]))
+        spreads_out.append(round(v, 2))
         if v >= thr:
             labels.append(f"{g}-led")
         elif v <= -thr:
             labels.append(f"anti-{g}")   # group lagging hardest
         else:
             labels.append("broad")
-    return pd.Series(labels, index=panel.index)
+    return (pd.Series(labels, index=panel.index),
+            pd.Series(spreads_out, index=panel.index))
 
 
 def regime_onsets(lead):
@@ -172,6 +180,85 @@ def regime_onsets(lead):
             out.append(i)
         i = j
     return out
+
+
+def leadership_run_age_series(lead):
+    """Point-in-time run age (calendar days) of whichever leadership label
+    is active as of each day — how long the regime active AT day i has
+    persisted THROUGH day i. Never looks past day i (point-in-time safe),
+    unlike run_duration_stats()'s per-run stats which summarize a run only
+    once it's fully known. This is the series forecast_engine.py's analog
+    model needs: a historical value at every date, not just today's."""
+    import numpy as np
+    ages = np.empty(len(lead), dtype=float)
+    run_start_i = 0
+    vals = lead.values
+    for i in range(len(vals)):
+        if i > 0 and vals[i] != vals[i - 1]:
+            run_start_i = i
+        ages[i] = (np.nan if vals[i] == "unknown"
+                   else (lead.index[i] - lead.index[run_start_i]).days + 1)
+    return pd.Series(ages, index=lead.index)
+
+
+def regime_runs(lead):
+    """Every leadership run (not just onsets >= REGIME_MIN_DAYS) as
+    (start_i, end_i_exclusive, length_days, label) tuples, including the
+    final, possibly-still-open run. Building block for run-duration stats
+    (max/median per label, current run's age) — regime_onsets() above only
+    keeps the start index and discards the length; this keeps everything.
+    """
+    runs, i, vals = [], 0, lead.values
+    while i < len(vals):
+        j = i
+        while j < len(vals) and vals[j] == vals[i]:
+            j += 1
+        if vals[i] != "unknown":
+            runs.append((i, j, j - i, vals[i]))
+        i = j
+    return runs
+
+
+def run_duration_stats(lead):
+    """Digest-ready run-duration stats: per-label count/max/median run
+    length (calendar days, via the real dates in `lead.index` — not
+    trading-day counts, so "age in weeks" reads the way a human means it),
+    plus the current (possibly still-open) run's label and age."""
+    runs = regime_runs(lead)
+    if not runs:
+        return None
+    by_label = {}
+    for start_i, end_i, _length_days, label in runs:
+        start_date = lead.index[start_i]
+        end_date = lead.index[end_i - 1]
+        calendar_days = (end_date - start_date).days + 1
+        by_label.setdefault(label, []).append(calendar_days)
+
+    by_label_stats = {}
+    for label, durations in by_label.items():
+        durations_sorted = sorted(durations)
+        n = len(durations_sorted)
+        med = (durations_sorted[n // 2] if n % 2 else
+               (durations_sorted[n // 2 - 1] + durations_sorted[n // 2]) / 2)
+        by_label_stats[label] = {
+            "count": n,
+            "max_days": max(durations_sorted),
+            "median_days": round(med, 1),
+            "max_weeks": round(max(durations_sorted) / 7, 1),
+            "median_weeks": round(med / 7, 1),
+        }
+
+    last_start_i, last_end_i, _len, last_label = runs[-1]
+    start_date = lead.index[last_start_i]
+    as_of = lead.index[-1]
+    age_days = (as_of - start_date).days + 1
+    current = {
+        "label": last_label,
+        "start_date": start_date.strftime("%Y-%m-%d"),
+        "age_days": age_days,
+        "age_weeks": round(age_days / 7, 1),
+    }
+    return {"by_label": by_label_stats, "current": current}
 
 
 # ----------------------------------------------------------- claim mining
@@ -302,7 +389,25 @@ def rs_table(panel, cfg):
         if ok:
             rows.append(row)
     rows.sort(key=lambda r: -(r["3m"] if r["3m"] is not None else -999))
+    for rank, row in enumerate(rows, start=1):
+        row["rank_3m"] = rank
     return rows
+
+
+def sector_rank_series(panel, cfg, n=63):
+    """Historical (not just today's) percentile rank of every sector/
+    size_style ticker's n-day return relative to the benchmark, 0=worst
+    to 1=best among that day's group. Point-in-time safe (each row only
+    uses that row's own trailing window). Used by forecast_engine.py's
+    Stage 2a feature space — a single day's rs_table() rank isn't enough
+    there since the analog model needs the full history."""
+    bench = cfg["benchmark"]
+    members = [t for t in [s["ticker"] for s in cfg["sectors"] + cfg["size_style"]]
+               if t in panel.columns]
+    bench_ret = panel[bench].pct_change(n)
+    rel = pd.DataFrame({t: panel[t].pct_change(n) - bench_ret for t in members},
+                        index=panel.index)
+    return rel.rank(axis=1, pct=True)
 
 
 def relative_curves(panel, cfg, days=252, stride=3):
@@ -430,10 +535,11 @@ def main():
         hmm_regime = None
 
     panel = build_panel(cfg, prices)
-    lead = leadership_series(panel, cfg)
+    lead, lead_spread = leadership_series(panel, cfg)
     eps = build_episodes(panel, cfg, lead, vix, tnx, oas)
     claims, searched = mine(eps)
     today = panel.index[-1]
+    run_durations = run_duration_stats(lead)
 
     digest = {
         "meta": {
@@ -462,12 +568,15 @@ def main():
         "current": {
             "as_of": today.strftime("%Y-%m-%d"),
             "leadership": lead.iloc[-1],
+            "leadership_spread_pct": (None if pd.isna(lead_spread.iloc[-1])
+                                       else float(lead_spread.iloc[-1])),
             "regimes": {
                 "vix": series_regime_vix(vix, today),
                 "rates": series_regime_rates(tnx, today),
                 "credit": series_regime_credit(oas, today),
             },
         },
+        "run_durations": run_durations,
         "hmm_regime": hmm_regime,
         "rs_table": rs_table(panel, cfg),
         "relative_curves": relative_curves(panel, cfg),

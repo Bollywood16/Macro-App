@@ -77,6 +77,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import research_engine as re_engine  # noqa: E402  (reuse fetch/rsi/HY-OAS)
+import rotation_engine as rot_engine  # noqa: E402  (Stage 2a: leadership context)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -102,8 +103,9 @@ MODEL_VERSION = "mm-forecast-v1.0-analog+regime-baserate"
 FEATURE_FIELDS = [
     "ret_1d", "ret_5d", "ret_20d", "ret_60d", "ret_120d", "rsi14",
     "dist_ma50", "dist_ma200", "drawdown_252", "rel_spy_63d", "vol_21d",
-    "mom_12m",
+    "mom_12m", "rotation_tilt_pct", "regime_age_weeks", "sector_rs_rank",
 ]
+NEUTRAL_RS_RANK = 0.5  # imputed for tickers outside the rotation universe
 TRADING_DAYS_YEAR = 252
 
 LABEL_TEXT = {
@@ -158,7 +160,8 @@ def append_manual_price(close: pd.Series, price: float) -> pd.Series:
     return s
 
 
-def build_feature_frame(close: pd.Series, spy_close: pd.Series) -> pd.DataFrame:
+def build_feature_frame(close: pd.Series, spy_close: pd.Series,
+                         rotation_ctx=None, ticker: str = None) -> pd.DataFrame:
     df = pd.DataFrame({"close": close})
     df["ma50"] = close.rolling(50).mean()
     df["ma200"] = close.rolling(200).mean()
@@ -188,6 +191,31 @@ def build_feature_frame(close: pd.Series, spy_close: pd.Series) -> pd.DataFrame:
     # equity/ETF return dispersion, so raw trailing return is used as an
     # explicit simplification of "excess" (documented here, not silent).
     df["mom_12m"] = close.pct_change(252)
+    # Stage 2a: rotation leadership context (Same macro-wide value for every
+    # ticker on a given day, same idea as vix/credit regime dims below being
+    # shared across all forecasts). Imputed to a neutral 0.0 rather than left
+    # NaN when the rotation panel is unavailable/pre-history for this date —
+    # the query row must never be NaN here or it poisons the whole analog
+    # distance vector (every candidate distance becomes NaN), silently
+    # breaking analog matching for every ticker, not just this feature.
+    if rotation_ctx is not None:
+        spread_al = rotation_ctx["spread"].reindex(close.index).ffill()
+        age_al = rotation_ctx["age_weeks"].reindex(close.index).ffill()
+        df["rotation_tilt_pct"] = spread_al.fillna(0.0)
+        df["regime_age_weeks"] = age_al.fillna(0.0)
+    else:
+        df["rotation_tilt_pct"] = 0.0
+        df["regime_age_weeks"] = 0.0
+    # Sector RS rank: only meaningful for tickers that are themselves part
+    # of the sector/size_style rotation universe (they have a group to be
+    # ranked within). Any other ticker gets the neutral mid-pack default —
+    # same "never leave the query row NaN" reasoning as above.
+    ranks = rotation_ctx.get("ranks") if rotation_ctx is not None else None
+    if ranks is not None and ticker in ranks.columns:
+        rank_al = ranks[ticker].reindex(close.index).ffill()
+        df["sector_rs_rank"] = rank_al.fillna(NEUTRAL_RS_RANK)
+    else:
+        df["sector_rs_rank"] = NEUTRAL_RS_RANK
     return df
 
 
@@ -385,6 +413,10 @@ def build_drivers(ticker, query, regimes, intraday_proxy):
         d = "positive" if query["mom_12m"] >= 0 else "negative"
         b.append(f"Trailing 12-month time-series momentum is {d} "
                   f"({query['mom_12m'] * 100:+.1f}%).")
+    if pd.notna(query.get("rotation_tilt_pct")) and query["rotation_tilt_pct"] != 0:
+        b.append(f"Sector rotation tilt (63d group spread vs SPY) is "
+                  f"{query['rotation_tilt_pct']:+.1f}pp, "
+                  f"{query.get('regime_age_weeks', 0):.0f} weeks into this regime.")
     b.append(f"Credit spreads (HY OAS, 63d) are {regimes[1]}.")
     if ticker != BENCHMARK and pd.notna(query.get("rel_spy_63d")):
         d = "outperforming" if query["rel_spy_63d"] >= 0 else "underperforming"
@@ -441,7 +473,7 @@ def mm_journal(op, payload):
 
 
 def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
-            manual_price, market_status, dry_run):
+            manual_price, market_status, dry_run, rotation_ctx=None):
     ticker = asset["ticker"]
     close = universe_prices.get(ticker)
     if close is None or len(close) < 260:
@@ -461,7 +493,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         spy_close_run = spy_close
         spy_trend_run = spy_trend_df
 
-    df = build_feature_frame(close, spy_close_run)
+    df = build_feature_frame(close, spy_close_run, rotation_ctx, ticker)
     query_pos = len(df) - 1
     query = df.iloc[query_pos]
     effective_price = float(query["close"])
@@ -685,6 +717,49 @@ def print_recommendation_card(result):
     print(f"model_version: {MODEL_VERSION}")
 
 
+# --------------------------------------------------------- rotation context
+
+
+def build_rotation_context(universe_prices):
+    """Stage 2a: rotation leadership (numeric spread) + regime run-age as a
+    historical time series, reusing rotation_engine's own leadership
+    machinery unchanged (build_panel / leadership_series /
+    leadership_run_age_series) rather than re-deriving it. Fails soft
+    (returns None) on any error — this is a context enrichment, not a
+    required input; every ticker forecast must still work without it.
+
+    Reuses tickers already fetched into `universe_prices` (batch-mode runs
+    already fetch the whole rotation universe as part of the research+
+    rotation asset union — see load_universe()) and only fetches the
+    handful still missing (on-demand single-ticker runs).
+    """
+    try:
+        with open(ROTATION_CONFIG_PATH) as f:
+            rot_cfg = json.load(f)
+        rot_tickers = ([rot_cfg["benchmark"]]
+                       + [s["ticker"] for s in rot_cfg["sectors"]]
+                       + [s["ticker"] for s in rot_cfg["size_style"]])
+        rot_prices = {}
+        for t in rot_tickers:
+            if t in universe_prices:
+                rot_prices[t] = universe_prices[t]
+                continue
+            try:
+                rot_prices[t] = re_engine.fetch_history(t)
+            except Exception as e:
+                print(f"[warn] rotation context: skipping {t}: {e}")
+        if rot_cfg["benchmark"] not in rot_prices:
+            return None
+        panel = rot_engine.build_panel(rot_cfg, rot_prices)
+        lead, spread = rot_engine.leadership_series(panel, rot_cfg)
+        age_days = rot_engine.leadership_run_age_series(lead)
+        ranks = rot_engine.sector_rank_series(panel, rot_cfg)
+        return {"spread": spread, "age_weeks": age_days / 7.0, "ranks": ranks}
+    except Exception as e:
+        print(f"[warn] rotation context unavailable: {e}")
+        return None
+
+
 # -------------------------------------------------------------------- main
 
 
@@ -725,13 +800,15 @@ def main():
         except Exception as e:
             print(f"[warn] skipping {t}: {e}")
 
+    rotation_ctx = build_rotation_context(universe_prices)
+
     on_demand = args.ticker is not None
     for t in tickers:
         asset = {"ticker": t, "label": label_by_ticker.get(t, t)}
         market_status = "closed" if not on_demand else args.market_status
         result = run_one(asset, universe_prices, spy_close, spy_trend_df,
                           vix, oas, args.price if on_demand else None,
-                          market_status, args.dry_run)
+                          market_status, args.dry_run, rotation_ctx)
         if on_demand:
             if not result:
                 # A silent no-op run shows green in Actions and leaves the

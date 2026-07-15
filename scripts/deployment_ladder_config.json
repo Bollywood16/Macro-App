@@ -1,0 +1,20 @@
+{
+  "_readme": "Owner-editable config for scripts/deployment_ladder.py. fomc_dates and earnings_dates start EMPTY on purpose -- this app never backfills calendar facts from model memory (MASTER_AGENT_PROMPT.md discipline: dated facts come from the owner or a verifiable source, not invented). Until filled in, the tranche-1 participation gate and the blackout guardrail both fail soft to a labeled warning instead of silently assuming every day is clear. hy_oas_blowout_level/hy_oas_blowout_21d_jump are fixed reference thresholds (FRED BAMLH0A0HYM2 is quoted in percentage points), not fitted -- same spirit as positioning_adapters.py's STRETCHED_THRESHOLD.",
+  "ticker": "SPY",
+  "build_anchor_price": null,
+  "build_anchor_date": null,
+  "tranche1_weekly_deploy_pct": 0.25,
+  "tranche2_rungs": [
+    { "drawdown_pct": -0.05, "deploy_pct": 0.10 },
+    { "drawdown_pct": -0.10, "deploy_pct": 0.15 },
+    { "drawdown_pct": -0.15, "deploy_pct": 0.20 },
+    { "drawdown_pct": -0.20, "deploy_pct": 0.25 }
+  ],
+  "tranche3_deep_reserve_pct": 0.20,
+  "hy_oas_blowout_level": 8.0,
+  "hy_oas_blowout_21d_jump": 1.5,
+  "fomc_dates": [],
+  "earnings_dates": {},
+  "rebaseline_quarter_days": 63,
+  "rebaseline_drift_pct": 0.10
+}

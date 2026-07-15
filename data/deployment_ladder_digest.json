@@ -1,0 +1,69 @@
+{
+  "ticker": "SPY",
+  "as_of": "2026-07-15",
+  "price": 749.17,
+  "halt": false,
+  "halt_reasons": [],
+  "fills_blocked": false,
+  "guardrails": {
+    "hy_oas": {
+      "available": true,
+      "latest_pct": 2.69,
+      "21d_change_pct": -0.02,
+      "level_threshold_pct": 8.0,
+      "jump_threshold_pct": 1.5,
+      "blowout": false
+    },
+    "blackout": {
+      "active": false,
+      "reasons": [],
+      "warning": "fomc_dates/earnings_dates empty in config -- blackout gate has nothing to block on"
+    }
+  },
+  "rebaseline_alert": {
+    "active": false,
+    "reasons": [],
+    "warning": "build_anchor_price/build_anchor_date not set in config -- cannot evaluate re-baseline"
+  },
+  "tranche1": {
+    "eligible": false,
+    "weekly_deploy_pct": 0.25,
+    "reason": "fomc_dates empty in config -- cannot confirm participation gate, defaulting to not-eligible"
+  },
+  "tranche2": {
+    "trailing_high_20d": 754.95,
+    "drawdown_from_high_pct": -0.77,
+    "eligible_rungs": [],
+    "all_rungs": [
+      {
+        "drawdown_pct": -0.05,
+        "deploy_pct": 0.1
+      },
+      {
+        "drawdown_pct": -0.1,
+        "deploy_pct": 0.15
+      },
+      {
+        "drawdown_pct": -0.15,
+        "deploy_pct": 0.2
+      },
+      {
+        "drawdown_pct": -0.2,
+        "deploy_pct": 0.25
+      }
+    ],
+    "reason": "ok"
+  },
+  "tranche3": {
+    "eligible": false,
+    "deep_reserve_pct": 0.2,
+    "regime": {
+      "vix": "calm",
+      "credit": "flat",
+      "spy_trend": "above",
+      "regime_break": false
+    },
+    "reason": "no_regime_break"
+  },
+  "warnings": []
+}

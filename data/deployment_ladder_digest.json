@@ -16,8 +16,7 @@
     },
     "blackout": {
       "active": false,
-      "reasons": [],
-      "warning": "fomc_dates/earnings_dates empty in config -- blackout gate has nothing to block on"
+      "reasons": []
     }
   },
   "rebaseline_alert": {
@@ -26,9 +25,10 @@
     "warning": "build_anchor_price/build_anchor_date not set in config -- cannot evaluate re-baseline"
   },
   "tranche1": {
-    "eligible": false,
+    "eligible": true,
     "weekly_deploy_pct": 0.25,
-    "reason": "fomc_dates empty in config -- cannot confirm participation gate, defaulting to not-eligible"
+    "last_fomc_date": "2026-06-17",
+    "reason": "ok"
   },
   "tranche2": {
     "trailing_high_20d": 754.95,

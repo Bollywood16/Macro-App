@@ -1,5 +1,5 @@
 {
-  "_readme": "Owner-editable config for scripts/deployment_ladder.py. fomc_dates and earnings_dates start EMPTY on purpose -- this app never backfills calendar facts from model memory (MASTER_AGENT_PROMPT.md discipline: dated facts come from the owner or a verifiable source, not invented). Until filled in, the tranche-1 participation gate and the blackout guardrail both fail soft to a labeled warning instead of silently assuming every day is clear. hy_oas_blowout_level/hy_oas_blowout_21d_jump are fixed reference thresholds (FRED BAMLH0A0HYM2 is quoted in percentage points), not fitted -- same spirit as positioning_adapters.py's STRETCHED_THRESHOLD.",
+  "_readme": "Owner-editable config for scripts/deployment_ladder.py. fomc_dates is a list of {date, note} objects covering BOTH days of each meeting; note is 'SEP' for meetings with a Summary of Economic Projections (March/June/September/December), else null. Populated from the Fed's official calendar (https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm) as of 2026-07-15, and kept current going forward by the fomc-calendar-refresh job in .github/workflows/mm-tools.yml (scripts/fetch_fomc_calendar.py), which re-scrapes that same page every January. earnings_dates starts EMPTY on purpose -- this app never backfills calendar facts from model memory (MASTER_AGENT_PROMPT.md discipline). Until filled in, the earnings side of the blackout guardrail fails soft to a labeled warning instead of silently assuming every day is clear. hy_oas_blowout_level/hy_oas_blowout_21d_jump are fixed reference thresholds (FRED BAMLH0A0HYM2 is quoted in percentage points), not fitted -- same spirit as positioning_adapters.py's STRETCHED_THRESHOLD. sep_blackout_extension_days (default 0 = off) optionally extends the blackout by N calendar days after each SEP-tagged meeting's second day, since SEP meetings (new dot plot / economic projections) tend to be higher-impact than a standard decision-only meeting; set to 1+ to enable.",
   "ticker": "SPY",
   "build_anchor_price": null,
   "build_anchor_date": null,
@@ -13,7 +13,25 @@
   "tranche3_deep_reserve_pct": 0.20,
   "hy_oas_blowout_level": 8.0,
   "hy_oas_blowout_21d_jump": 1.5,
-  "fomc_dates": [],
+  "sep_blackout_extension_days": 0,
+  "fomc_dates": [
+    { "date": "2026-01-27", "note": null },
+    { "date": "2026-01-28", "note": null },
+    { "date": "2026-03-17", "note": "SEP" },
+    { "date": "2026-03-18", "note": "SEP" },
+    { "date": "2026-04-28", "note": null },
+    { "date": "2026-04-29", "note": null },
+    { "date": "2026-06-16", "note": "SEP" },
+    { "date": "2026-06-17", "note": "SEP" },
+    { "date": "2026-07-28", "note": null },
+    { "date": "2026-07-29", "note": null },
+    { "date": "2026-09-15", "note": "SEP" },
+    { "date": "2026-09-16", "note": "SEP" },
+    { "date": "2026-10-27", "note": null },
+    { "date": "2026-10-28", "note": null },
+    { "date": "2026-12-08", "note": "SEP" },
+    { "date": "2026-12-09", "note": "SEP" }
+  ],
   "earnings_dates": {},
   "rebaseline_quarter_days": 63,
   "rebaseline_drift_pct": 0.10

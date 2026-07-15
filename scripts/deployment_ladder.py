@@ -58,7 +58,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -75,6 +75,20 @@ CONFIG_PATH = os.path.join(HERE, "deployment_ladder_config.json")
 def load_config(path=CONFIG_PATH):
     with open(path) as f:
         return json.load(f)
+
+
+def _fomc_entries(cfg: dict):
+    """Normalize fomc_dates entries to (date_str, note) tuples. Accepts
+    the current {"date": ..., "note": ...} objects (note is "SEP" or
+    null) or a bare date string (defensive backward-compat only, not
+    otherwise produced by this config)."""
+    out = []
+    for e in cfg.get("fomc_dates") or []:
+        if isinstance(e, dict):
+            out.append((e.get("date"), e.get("note")))
+        else:
+            out.append((e, None))
+    return out
 
 
 def spy_trend_frame(spy_close: pd.Series) -> pd.DataFrame:
@@ -102,7 +116,7 @@ def hy_oas_blowout(oas: pd.Series, level_threshold: float, jump_threshold: float
 
 
 def blackout_check(as_of_date, cfg: dict, ticker: str):
-    fomc = set(cfg.get("fomc_dates") or [])
+    fomc = _fomc_entries(cfg)
     earnings = set((cfg.get("earnings_dates") or {}).get(ticker, []))
     iso = as_of_date.isoformat()
     if not fomc and not earnings:
@@ -110,10 +124,17 @@ def blackout_check(as_of_date, cfg: dict, ticker: str):
                 "warning": "fomc_dates/earnings_dates empty in config -- "
                            "blackout gate has nothing to block on"}
     reasons = []
-    if iso in fomc:
-        reasons.append("fomc_date")
     if iso in earnings:
         reasons.append("earnings_date")
+
+    extend_days = cfg.get("sep_blackout_extension_days", 0)
+    for date_str, note in fomc:
+        if date_str == iso:
+            reasons.append(f"fomc_date({note})" if note else "fomc_date")
+        elif note == "SEP" and extend_days > 0:
+            meeting_dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+            if meeting_dt < as_of_date <= meeting_dt + timedelta(days=extend_days):
+                reasons.append(f"sep_extension(+{extend_days}d after {date_str})")
     return {"active": bool(reasons), "reasons": reasons}
 
 
@@ -140,7 +161,7 @@ def rebaseline_check(as_of_date, price: float, cfg: dict):
 
 
 def tranche1_status(as_of_date, cfg: dict, fills_blocked: bool):
-    fomc = sorted(cfg.get("fomc_dates") or [])
+    fomc = sorted(d for d, _ in _fomc_entries(cfg))
     weekly_pct = cfg.get("tranche1_weekly_deploy_pct")
     if not fomc:
         return {"eligible": False, "weekly_deploy_pct": weekly_pct,

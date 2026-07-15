@@ -25,5 +25,10 @@ jobs:
           git config user.name "rotation-radar-bot"
           git config user.email "actions@github.com"
           git add data/rotation_digest.json
-          git diff --cached --quiet && echo "No changes" || \
-            (git commit -m "Update rotation dataset" && git push)
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Update rotation dataset"
+            git pull --rebase
+            git push
+          fi

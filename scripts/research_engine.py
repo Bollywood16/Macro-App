@@ -61,6 +61,10 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from deflated_confidence import deflated_confidence  # noqa: E402  (Stage 3b)
+
 UNIVERSE_PATH = os.path.join(HERE, "universe_config.json")
 REGIME_PATH = os.path.join(HERE, "regime_config.json")
 EVIDENCE_PATH = os.path.join(ROOT, "data", "research_evidence.json")
@@ -325,19 +329,10 @@ def median(vals):
     return round(vals[m] if n % 2 else (vals[m - 1] + vals[m]) / 2, 2)
 
 
-def confidence(n, consistency, depth, decades):
-    score = 100 * min(1, n / 12) * consistency * (0.85 ** depth) \
-        * min(1, decades / 4)
-    score = round(score)
-    label = "high" if score >= 70 else ("moderate" if score >= 40
-                                        else "low / likely mined")
-    return score, label
-
-
 def mine_claims(episodes, regime_keys):
     """Depth-1 and depth-2 regime conjunctions over independent episodes."""
     done = [e for e in episodes if e["complete"]]
-    claims, searched = [], 0
+    claims = []
 
     def conjunctions():
         for k in regime_keys:
@@ -352,8 +347,13 @@ def mine_claims(episodes, regime_keys):
                     for vb in vbs:
                         yield ((keys[a], va), (keys[b], vb))
 
-    for conj in conjunctions():
-        searched += 1
+    # Total conjunction count is fixed by regime_keys/regime values alone
+    # (independent of subset filtering below), so it's known up front —
+    # Stage 3b's deflation needs it as the multiple-testing denominator.
+    conj_list = list(conjunctions())
+    searched = len(conj_list)
+
+    for conj in conj_list:
         subset = [e for e in done
                   if all(e["regimes"][k] == v for k, v in conj)]
         if len(subset) < 4:
@@ -365,7 +365,8 @@ def mine_claims(episodes, regime_keys):
         pos = [r for r in rets if r > 0]
         consistency = max(len(pos), len(rets) - len(pos)) / len(rets)
         decades = len({e["date"][:3] for e in subset})
-        score, label = confidence(len(subset), consistency, len(conj), decades)
+        score, label = deflated_confidence(
+            len(subset), consistency, len(conj), decades, searched)
         worst_ret = min(rets)
         worst_dd = min(e["max_dd_pct"] for e in subset)
         exceptions = [e["date"] for e in subset

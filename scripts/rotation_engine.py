@@ -46,6 +46,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import regime_hmm  # noqa: E402  (data-driven comparison regime, fail-soft)
 import positioning_adapters  # noqa: E402  (Stage 2b: CFTC/CBOE, fail-soft)
+from deflated_confidence import deflated_confidence  # noqa: E402  (Stage 3b)
 
 CONFIG_PATH = os.path.join(HERE, "rotation_config.json")
 OUTPUT_PATH = os.path.join(ROOT, "data", "rotation_digest.json")
@@ -273,13 +274,6 @@ def median(vals):
     return round(vals[m] if n % 2 else (vals[m - 1] + vals[m]) / 2, 2)
 
 
-def confidence(n, consistency, depth, decades):
-    score = round(100 * min(1, n / 12) * consistency * (0.85 ** depth)
-                  * min(1, decades / 4))
-    return score, ("high" if score >= 70 else
-                   "moderate" if score >= 40 else "low / likely mined")
-
-
 def fwd_return(panel, t, i, n=FWD):
     if t not in panel.columns or i + n >= len(panel):
         return None
@@ -319,7 +313,7 @@ def build_episodes(panel, cfg, lead, vix, tnx, oas):
 def mine(eps):
     done = [e for e in eps if e["complete"]]
     keys = ["leadership", "vix", "rates", "credit"]
-    claims, searched = [], 0
+    claims = []
 
     def conjs():
         for k in keys:
@@ -331,8 +325,13 @@ def mine(eps):
                     for vb in {e["regimes"][keys[b]] for e in done}:
                         yield ((keys[a], va), (keys[b], vb))
 
-    for conj in conjs():
-        searched += 1
+    # Total conjunction count is fixed by `keys`/regime values alone
+    # (independent of subset filtering below), so it's known up front —
+    # Stage 3b's deflation needs it as the multiple-testing denominator.
+    conj_list = list(conjs())
+    searched = len(conj_list)
+
+    for conj in conj_list:
         sub = [e for e in done
                if all(e["regimes"][k] == v for k, v in conj)]
         if len(sub) < 6:
@@ -342,7 +341,8 @@ def mine(eps):
         pos = [r for r in rets if r > 0]
         consistency = max(len(pos), len(rets) - len(pos)) / len(rets)
         decades = len({e["date"][:3] for e in sub})
-        score, label = confidence(len(sub), consistency, len(conj), decades)
+        score, label = deflated_confidence(
+            len(sub), consistency, len(conj), decades, searched)
         best_counts = {}
         for e in sub:
             if e["best_fwd_sector"]:

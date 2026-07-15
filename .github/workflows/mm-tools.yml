@@ -1,15 +1,17 @@
 name: MM Tools
 
 # Two independent jobs on two schedules, per the directive:
-#   layer6-batch:       weekdays 21:00 UTC — mm_tools.py layer6 for the
+#   layer6-batch:       weekdays 22:30 UTC — mm_tools.py layer6 for the
 #                        top scanner_digest.json setups -> data/layer6_digest.json
+#                        (5 min after Scanner's 22:25 UTC run, so it reads
+#                        TODAY's setups instead of yesterday's)
 #   deployment-ladder:   Mondays 21:15 UTC (weekly) -> data/deployment_ladder_digest.json
 # github.event.schedule tells each job which cron fired so they don't
 # both run on every tick; workflow_dispatch runs both for manual testing.
 
 on:
   schedule:
-    - cron: "0 21 * * 1-5"   # weekdays 21:00 UTC
+    - cron: "30 22 * * 1-5"  # weekdays 22:30 UTC
     - cron: "15 21 * * 1"    # Mondays 21:15 UTC (weekly)
   workflow_dispatch: {}
 
@@ -18,7 +20,7 @@ permissions:
 
 jobs:
   layer6-batch:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 21 * * 1-5'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 22 * * 1-5'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

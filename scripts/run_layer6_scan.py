@@ -12,13 +12,13 @@ layer on top, the same relationship scanner.py has to forecast_engine.py
 (imports and loops over a universe, doesn't re-implement the per-ticker
 logic).
 
-data/scanner_digest.json is committed by scanner.yml on its own later
-schedule (22:25 UTC), while this workflow runs at 21:00 UTC per the
-directive -- so on a given day this reads WHATEVER scanner digest is
-currently committed (yesterday's, if today's Scanner run hasn't landed
-yet), same "operate on latest committed state, label it, never silently
-backfill" discipline as every other engine here. See meta.
-scanner_digest_generated_utc in the output for that timestamp.
+mm-tools.yml schedules this at 22:30 UTC, 5 minutes after scanner.yml's
+22:25 UTC run, so it normally reads TODAY's scanner digest. If that run
+was late or failed, this still reads WHATEVER scanner digest is
+currently committed rather than blocking -- same "operate on latest
+committed state, label it, never silently backfill" discipline as every
+other engine here. See meta.scanner_digest_generated_utc in the output
+for that timestamp, which makes staleness visible instead of silent.
 
 Fail-soft: a ticker whose layer6 call raises unexpectedly (mm_tools.
 run_layer6 already catches the fetch/data-shape failures it can predict)

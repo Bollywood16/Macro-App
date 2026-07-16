@@ -60,11 +60,12 @@
   summary{cursor:pointer;padding:9px 0;font-weight:600;font-size:13.5px;list-style:none}
   details p{color:var(--dim);font-size:12.5px;padding:0 0 10px}
 
-  /* ---------- chat ---------- */
-  #view-chat{display:flex;flex-direction:column;height:calc(100vh - 60px);max-width:780px}
-  #view-chat.on{display:flex}
-  .thread{flex:1;overflow-y:auto;padding:8px 2px}
-  .greeting{text-align:center;margin-top:12vh}
+  /* ---------- desk (chat + sectors/size heat strip + macro pulse) ---------- */
+  #view-desk{display:flex;flex-direction:column;height:calc(100vh - 60px);max-width:780px}
+  #view-desk.on{display:flex}
+  .desk-scroll{flex:1;overflow-y:auto;padding:2px 2px 0}
+  .thread{padding:8px 2px}
+  .greeting{text-align:center;margin:16px 0 8px}
   .greeting h1{font-size:28px}
   .greeting p{color:var(--dim);font-size:14px;margin-top:6px}
   .msg{margin:10px 0;display:flex}
@@ -128,6 +129,10 @@
     font-size:12.5px;min-width:88px;cursor:pointer;background:var(--card)}
   .hchip.on{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}
   .hchip .hd{font-weight:700}
+  /* heat-strip tiles reuse .hchip's shape + tokens.css's .chip-good/.chip-bad
+     tint; these need the extra specificity to beat .hchip's own background */
+  .hchip.chip-good{background:rgba(36,138,61,.10);border-color:transparent}
+  .hchip.chip-bad{background:rgba(215,0,21,.10);border-color:transparent}
   .jcard{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px}
   .jcard .top{display:flex;justify-content:space-between;font-size:13px;font-weight:700}
   .jcard .meta{color:var(--dim);font-size:12px;margin-top:2px}
@@ -146,63 +151,72 @@
   .regentry{border-top:1px solid var(--line);padding:8px 0;font-size:13px}
   .regentry:first-child{border-top:none}
 
-  /* Mobile nav: overlay sidebar + backdrop, dismissible by outside-tap.
-     (Stage B replaces this with a bottom tab bar once Desk/Journal/Studies
-     exist; this fixes the current hang-over-content bug in the meantime —
-     no backdrop meant nothing ever dismissed the panel on outside tap.) */
-  .nav-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:19;
-    opacity:0;pointer-events:none;transition:opacity .18s}
-  .nav-backdrop.show{opacity:1;pointer-events:auto}
-  @media (max-width:720px){
-    aside{position:fixed;left:0;top:0;bottom:0;z-index:20;transform:translateX(-105%);
-      transition:transform .2s}
-    aside.open{transform:translateX(0);box-shadow:var(--shadow-nav)}
+  /* Mobile nav (≤768px): sidebar is replaced outright by the bottom tab bar
+     (tokens.css .bottom-nav) — Stage B. Desktop (>768px) keeps the sidebar;
+     .bottom-nav is hidden there by tokens.css's own min-width query. */
+  @media (max-width:768px){
+    aside{display:none}
+    #view-desk{height:calc(100dvh - 110px)}
     .topbar{display:flex}
-    #view-chat{height:calc(100dvh - 110px)}
   }
+  .topbar input{border:1px solid var(--line);border-radius:10px;background:var(--card);
+    font:600 13px -apple-system,sans-serif;padding:0 10px;margin-left:auto;max-width:150px;
+    min-height:var(--tap-min)}
 </style>
 </head>
 <body>
 
-<div class="nav-backdrop" id="navBackdrop"></div>
 <aside id="side">
   <div class="brand">Macro App</div>
   <nav>
-    <button data-v="chat" class="on"><span class="ic">✳</span>Chat</button>
-    <div class="navlabel">Relative performance</div>
-    <button data-v="sectors"><span class="ic">▦</span>Sectors</button>
-    <button data-v="size"><span class="ic">◱</span>Size &amp; Style</button>
-    <div class="navlabel">Data</div>
-    <button data-v="macro"><span class="ic">☰</span>Macro</button>
-    <div class="navlabel">Market Memory</div>
-    <button data-v="scanner"><span class="ic">◎</span>Scanner</button>
-    <button data-v="forecast"><span class="ic">◈</span>Forecast</button>
+    <button data-v="desk" class="on"><span class="ic">✳</span>Desk</button>
     <button data-v="journal"><span class="ic">▤</span>Journal</button>
-    <button data-v="scorecards"><span class="ic">◧</span>Scorecards</button>
-    <button data-v="ask"><span class="ic">?</span>Ask</button>
-    <div class="navlabel">Studies</div>
-    <a href="research.html"><span class="ic">⌕</span>Research</a>
-    <a href="overlay.html"><span class="ic">↗</span>Extension Overlay</a>
+    <button data-v="studies"><span class="ic">⌕</span>Studies</button>
   </nav>
   <div class="sidefoot">
     <input type="password" id="pass" placeholder="App passphrase">
-    <div class="hint">Stored on this device only. Needed for Chat.</div>
+    <div class="hint">Stored on this device only. Needed for Desk and Journal.</div>
   </div>
 </aside>
 
 <main>
   <div class="topbar">
-    <button class="burger" id="burger">☰</button>
     <b>Macro App</b>
+    <input type="password" id="pass-m" placeholder="Passphrase">
   </div>
 
-  <!-- CHAT -->
-  <div class="view on" id="view-chat">
-    <div class="thread" id="thread">
-      <div class="greeting" id="greeting">
-        <h1>What would you like to know?</h1>
-        <p>Answers cite only computed numbers from the evidence engines.<br>
-        Confidence comes from the data — never from vibes.</p>
+  <!-- DESK (replaces Chat + Sectors + Size + Macro — Stage B) -->
+  <div class="view on" id="view-desk">
+    <div class="desk-scroll" id="desk-scroll">
+      <div class="card" id="desk-narrative">
+        <div class="sub" id="desk-asof" style="margin-bottom:0">Loading market snapshot…</div>
+      </div>
+
+      <div class="card">
+        <h2>Sectors &amp; Size</h2>
+        <div class="sub" id="heat-asof">Ranked by 3-month relative strength vs SPY. Tap a tile for detail.</div>
+        <div class="hlist" id="heat-strip">
+          <div class="hchip skeleton skeleton-card" style="height:54px">&nbsp;</div>
+          <div class="hchip skeleton skeleton-card" style="height:54px">&nbsp;</div>
+          <div class="hchip skeleton skeleton-card" style="height:54px">&nbsp;</div>
+        </div>
+      </div>
+
+      <details class="card" id="macro-pulse">
+        <summary id="macro-pulse-line">Macro pulse — loading…</summary>
+        <div class="sub" id="hmm-regime" style="display:none;margin-top:8px"></div>
+        <table id="mac-table" style="margin-top:6px">
+          <tr><td class="skeleton skeleton-line" colspan="4">&nbsp;</td></tr>
+        </table>
+        <div id="mac-help" style="margin-top:6px"></div>
+      </details>
+
+      <div class="thread" id="thread">
+        <div class="greeting" id="greeting">
+          <h1>What would you like to know?</h1>
+          <p>Answers cite only computed numbers from the evidence engines.<br>
+          Confidence comes from the data — never from vibes.</p>
+        </div>
       </div>
     </div>
     <div class="errline" id="chat-err"></div>
@@ -216,58 +230,21 @@
     </div>
   </div>
 
-  <!-- SECTORS -->
-  <div class="view" id="view-sectors">
-    <h1>Sectors</h1><div class="sub" id="sec-asof"></div>
-    <div class="sub" id="hmm-regime" style="display:none"></div>
-    <div class="card"><h2>Relative strength vs SPY</h2><table id="sec-table">
-      <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
-      <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
-      <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
-    </table></div>
-    <div class="card"><h2>Relative performance — trailing year</h2>
-      <div class="chartwrap"><canvas id="sec-chart"></canvas></div></div>
+  <!-- tap-to-expand bottom sheet for heat-strip tiles. Stage F promotes this
+       into the full shared TearSheet reused from every ticker mention. -->
+  <div class="sheet-backdrop" id="tileSheetBackdrop"></div>
+  <div class="sheet" id="tileSheet">
+    <div class="sheet-grab"></div>
+    <div id="tileSheetBody"></div>
   </div>
 
-  <!-- SIZE -->
-  <div class="view" id="view-size">
-    <h1>Size &amp; Style</h1><div class="sub" id="size-asof"></div>
-    <div class="card"><h2>Relative strength vs SPY</h2>
-      <div class="sub">RSP = equal-weight (mega-cap concentration inverse),
-      IWM = small caps, MGK = mega-cap growth.</div>
-      <table id="size-table">
-        <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
-        <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
-      </table></div>
-    <div class="card"><h2>Relative performance — trailing year</h2>
-      <div class="chartwrap"><canvas id="size-chart"></canvas></div></div>
-  </div>
+  <!-- JOURNAL (replaces Forecast + Journal + Scanner + Scorecards — Stage B) -->
+  <div class="view" id="view-journal">
+    <h1>Journal</h1>
+    <div class="sub">Setups, decisions, and model calibration — one scrollable record.</div>
 
-  <!-- MACRO -->
-  <div class="view" id="view-macro">
-    <h1>Macro</h1><div class="sub" id="mac-asof"></div>
-    <div class="card"><h2>Current readings</h2><table id="mac-table">
-      <tr><td class="skeleton skeleton-line" colspan="4">&nbsp;</td></tr>
-      <tr><td class="skeleton skeleton-line" colspan="4">&nbsp;</td></tr>
-    </table></div>
-    <div class="card"><h2>What each one means</h2><div id="mac-help"></div></div>
-  </div>
-
-  <!-- SCANNER -->
-  <div class="view" id="view-scanner">
-    <h1>Scanner</h1>
-    <div class="sub" id="sc-asof">Today's Setups — event-gated, ranked shortlist from the daily scan.</div>
-    <div id="sc-list"><div class="card skeleton skeleton-card"></div>
-      <div class="card skeleton skeleton-card"></div></div>
-  </div>
-
-  <!-- FORECAST -->
-  <div class="view" id="view-forecast">
-    <h1>Forecast</h1>
-    <div class="sub">On-demand ETF analysis — historical analog model +
-      regime-conditioned base rate. Confidence is computed, never invented.</div>
     <div class="card">
-      <h2>Analyze</h2>
+      <h2>Analyze a ticker</h2>
       <input class="formfield" id="fc-ticker" list="ticker-suggest"
         placeholder="Ticker, e.g. SMH" autocomplete="off" spellcheck="false"
         style="text-transform:uppercase">
@@ -290,22 +267,20 @@
       <div class="card" id="fc-card"></div>
       <div class="card" id="fc-decision"></div>
     </div>
-  </div>
 
-  <!-- JOURNAL -->
-  <div class="view" id="view-journal">
-    <h1>Journal</h1>
-    <div class="sub" id="jr-sub">Decision history and open positions.</div>
+    <h2 style="margin-top:22px">Today's Setups</h2>
+    <div class="sub" id="sc-asof">Event-gated, ranked shortlist from the daily scan.</div>
+    <div id="sc-list"><div class="card skeleton skeleton-card"></div>
+      <div class="card skeleton skeleton-card"></div></div>
+
+    <h2 style="margin-top:22px">Decisions</h2>
+    <div class="sub" id="jr-sub">Open positions and approaching evaluation.</div>
     <div class="card"><h2>Open decisions</h2><div id="jr-open"><div class="skeleton skeleton-card"></div></div></div>
     <div class="card"><h2>Approaching evaluation</h2><div id="jr-approaching"><div class="skeleton skeleton-card"></div></div></div>
     <div class="card"><h2>History</h2><div id="jr-history"><div class="skeleton skeleton-card"></div></div></div>
-  </div>
 
-  <!-- SCORECARDS -->
-  <div class="view" id="view-scorecards">
-    <h1>Scorecards</h1>
+    <h2 style="margin-top:22px">Scorecards</h2>
     <div class="sub" id="sca-sub">Model calibration and personal decision-judgment, computed from matured outcomes.</div>
-
     <div class="card"><h2>Calibration</h2>
       <div class="metricrow" id="sca-cal-summary"></div>
       <table id="sca-cal-table">
@@ -337,7 +312,26 @@
     </div>
   </div>
 
-  <!-- ASK -->
+  <!-- STUDIES (archive only — Stage B) -->
+  <div class="view" id="view-studies">
+    <h1>Studies</h1>
+    <div class="sub">Deep-dive research archive — not part of the daily workflow.</div>
+
+    <a class="card" href="research.html" style="display:block;text-decoration:none;color:inherit">
+      <h2>Research engine ↗</h2>
+      <div class="sub" style="margin-bottom:0">Triggers × sampling × regimes, claim mining with
+        computed confidence, and dated news evidence for every tracked asset.</div>
+    </a>
+
+    <div class="card">
+      <h2>Completed studies</h2>
+      <div id="studies-completed" class="sub">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ASK (folded into Desk's scope-toggle composer in Stage E; left wired
+       but unreachable via nav in the meantime so nothing below throws) -->
+  <div style="display:none">
   <div class="view" id="view-ask">
     <h1>Ask</h1>
     <div class="sub">Grounded Q&amp;A over your forecast and decision history — every number traces to a query result below.</div>
@@ -355,42 +349,58 @@
       <div class="card"><h2>Evidence</h2><div id="ask-evidence"></div></div>
     </div>
   </div>
+  </div>
 </main>
+
+<nav class="bottom-nav" id="bottomNav">
+  <div class="row">
+    <button data-v="desk" class="on"><span class="ic">✳</span><span>Desk</span></button>
+    <button data-v="journal"><span class="ic">▤</span><span>Journal</span></button>
+    <button data-v="studies"><span class="ic">⌕</span><span>Studies</span></button>
+  </div>
+</nav>
 
 <script>
 const FN_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/smooth-service";
-const SIZE_SET = new Set(["RSP","IWM","MGK"]);
-const PALETTE = ["#0071E3","#248A3D","#D70015","#C04A00","#5E5CE6","#00A3A3",
-  "#B25000","#7D7AFF","#2E8B57","#A0524D","#4682B4"];
 const fmt = v => (v==null)?"–":(v>0?"+":"")+Number(v).toFixed(1)+"%";
 const cls = v => (v==null)?"":(v>=0?"pos":"neg");
-let ROT=null, charts={};
+let ROT=null;
 
-document.getElementById("pass").value = localStorage.getItem("pm_pass")||"";
-document.getElementById("pass").onchange = e =>
-  localStorage.setItem("pm_pass", e.target.value.trim());
-
-/* nav */
-const side = document.getElementById("side");
-const navBackdrop = document.getElementById("navBackdrop");
-function openNav(){ side.classList.add("open"); navBackdrop.classList.add("show"); }
-function closeNav(){ side.classList.remove("open"); navBackdrop.classList.remove("show"); }
-document.getElementById("burger").onclick = ()=>
-  side.classList.contains("open") ? closeNav() : openNav();
-navBackdrop.onclick = closeNav;
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
-  document.querySelectorAll(".view").forEach(v=>
-    v.classList.toggle("on", v.id === "view-"+b.dataset.v));
-  closeNav();
-  if(b.dataset.v === "journal") loadJournal();
-  if(b.dataset.v === "scanner") loadScanner();
-  if(b.dataset.v === "scorecards") loadScorecards();
+/* passphrase: two inputs (desktop sidebar #pass, mobile topbar #pass-m) kept
+   in sync via localStorage since the sidebar itself is hidden on mobile. */
+const passInputs = ["pass","pass-m"].map(id=>document.getElementById(id));
+const storedPass = localStorage.getItem("pm_pass")||"";
+passInputs.forEach(el=>{
+  el.value = storedPass;
+  el.addEventListener("input", ()=>{
+    localStorage.setItem("pm_pass", el.value.trim());
+    passInputs.forEach(other=>{ if(other!==el) other.value = el.value; });
+  });
 });
-document.querySelectorAll("nav a").forEach(a => a.onclick = closeNav);
+function getPassphrase(){
+  return passInputs.map(el=>el.value.trim()).find(Boolean) || localStorage.getItem("pm_pass") || "";
+}
 
-/* pull-to-refresh (Desk-precursor: refreshes whichever digest-driven view
-   is on screen; Stage B moves the trigger surface onto the merged Desk) */
+/* nav — 3 destinations (Desk/Journal/Studies), sidebar on desktop, bottom
+   tab bar on mobile, kept in sync by data-v rather than element identity. */
+function switchView(v){
+  document.querySelectorAll("#side nav button, #bottomNav button")
+    .forEach(x=>x.classList.toggle("on", x.dataset.v===v));
+  document.querySelectorAll(".view").forEach(el=>
+    el.classList.toggle("on", el.id === "view-"+v));
+  if(v === "journal"){ loadJournal(); loadScanner(); loadScorecards(); }
+  if(v === "studies") loadCompletedStudies();
+}
+document.querySelectorAll("#side nav button, #bottomNav button")
+  .forEach(b => b.onclick = () => switchView(b.dataset.v));
+
+/* pull-to-refresh on Desk (and Journal/Studies, same gesture). Desk scrolls
+   inside its own nested #desk-scroll, not <main> itself, so the scroll-
+   position check has to follow whichever view is actually on screen. */
+function scrollHost(){
+  return document.querySelector(".view.on")?.id === "view-desk"
+    ? document.getElementById("desk-scroll") : document.querySelector("main");
+}
 (function(){
   const mainEl = document.querySelector("main");
   const indicator = document.createElement("div");
@@ -400,13 +410,13 @@ document.querySelectorAll("nav a").forEach(a => a.onclick = closeNav);
   const THRESHOLD = 70;
   let startY = null, dy = 0, pulling = false;
   mainEl.addEventListener("touchstart", e=>{
-    pulling = mainEl.scrollTop <= 0;
+    pulling = scrollHost().scrollTop <= 0;
     startY = pulling ? e.touches[0].clientY : null;
   }, {passive:true});
   mainEl.addEventListener("touchmove", e=>{
     if(!pulling || startY==null) return;
     dy = e.touches[0].clientY - startY;
-    if(dy > 0 && mainEl.scrollTop <= 0){
+    if(dy > 0 && scrollHost().scrollTop <= 0){
       indicator.classList.add("show");
       indicator.textContent = dy > THRESHOLD ? "Release to refresh" : "Pull to refresh";
     }
@@ -430,9 +440,8 @@ async function refreshActiveDigests(){
     if(r.ok){ ROT = await r.json(); renderRotation(); }
   }catch{}
   const onId = document.querySelector(".view.on")?.id;
-  if(onId === "view-scanner"){ scannerLoaded = false; loadScanner(); }
-  if(onId === "view-journal") loadJournal();
-  if(onId === "view-scorecards") loadScorecards();
+  if(onId === "view-journal"){ scannerLoaded = false; loadScanner(); loadJournal(); loadScorecards(); }
+  if(onId === "view-studies"){ studiesLoaded = false; loadCompletedStudies(); }
 }
 
 /* data */
@@ -471,39 +480,73 @@ document.getElementById("fc-ticker").addEventListener("input", e=>normalizeTicke
   }catch{}
 })();
 
-function rsRows(filterSize){
-  return (ROT?.rs_table||[]).filter(r =>
-    SIZE_SET.has(r.ticker) === filterSize);
+// Sectors + size are one combined heat strip on Desk (Stage B) — ranked by
+// 3m RS vs SPY, colored green/red past a +-5% threshold. Tap opens a bottom
+// sheet with the numeric breakdown (Stage F promotes this to the full
+// shared TearSheet).
+function rsColorClass(v){
+  if(v==null) return "";
+  if(v >= 5) return "chip-good";
+  if(v <= -5) return "chip-bad";
+  return "";
 }
-function tableHTML(rows){
-  return `<tr><th>Asset</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th></tr>`+
-    rows.map(r=>`<tr><td><b>${r.ticker}</b>
-      <span style="color:var(--dim)"> ${r.label}</span></td>
-      <td class="${cls(r["1m"])}">${fmt(r["1m"])}</td>
-      <td class="${cls(r["3m"])}">${fmt(r["3m"])}</td>
-      <td class="${cls(r["6m"])}">${fmt(r["6m"])}</td>
-      <td class="${cls(r["1y"])}">${fmt(r["1y"])}</td></tr>`).join("");
+function renderHeatStrip(){
+  const rows = ROT?.rs_table || [];
+  const el = document.getElementById("heat-strip");
+  document.getElementById("heat-asof").textContent = rows.length
+    ? `As of ${ROT.current.as_of} · ranked by 3-month relative strength vs SPY. Tap a tile for detail.`
+    : "No rotation data yet.";
+  el.innerHTML = rows.length ? rows.map(r=>`
+    <div class="hchip chip ${rsColorClass(r["3m"])}" data-ticker="${esc(r.ticker)}" data-label="${esc(r.label||'')}">
+      <div class="hd">${esc(r.ticker)}</div>${fmt(r["3m"])} · 3m
+    </div>`).join("") : `<div class="empty">No rotation data yet.</div>`;
+  el.querySelectorAll(".hchip").forEach(chip => chip.onclick = () =>
+    openTileSheet(chip.dataset.ticker, chip.dataset.label));
 }
-function curveChart(canvasId, filterSize){
-  const rc = ROT?.relative_curves; if(!rc) return;
-  const entries = Object.entries(rc.curves)
-    .filter(([t])=>SIZE_SET.has(t)===filterSize);
-  if(charts[canvasId]) charts[canvasId].destroy();
-  charts[canvasId] = new Chart(document.getElementById(canvasId),{
-    type:"line",
-    data:{labels:rc.dates, datasets:entries.map(([t,v],i)=>({label:t,data:v,
-      borderColor:PALETTE[i%PALETTE.length],borderWidth:1.7,pointRadius:0,tension:.25}))},
-    options:{responsive:true,maintainAspectRatio:false,animation:false,
-      plugins:{legend:{position:"bottom",labels:{boxWidth:14,font:{size:11},color:"#6E6E73"}},
-        tooltip:{enabled:false}},
-      scales:{x:{ticks:{color:"#6E6E73",maxTicksLimit:6},grid:{color:"rgba(0,0,0,.05)"}},
-        y:{ticks:{color:"#6E6E73",callback:v=>v+"%"},
-          grid:{color:c=>c.tick.value===0?"rgba(0,0,0,.3)":"rgba(0,0,0,.05)"}}}}});
+function openTileSheet(ticker, label){
+  const row = (ROT?.rs_table||[]).find(r=>r.ticker===ticker);
+  document.getElementById("tileSheetBody").innerHTML = row ? `
+    <h2>${esc(ticker)} <span style="color:var(--dim);font-weight:400">${esc(label||'')}</span></h2>
+    <div class="sub">Relative strength vs SPY, as of ${esc(ROT.current.as_of)}</div>
+    <div class="metricrow">
+      <div class="metric"><div class="v ${cls(row['1m'])}">${fmt(row['1m'])}</div><div class="l">1 month</div></div>
+      <div class="metric"><div class="v ${cls(row['3m'])}">${fmt(row['3m'])}</div><div class="l">3 months</div></div>
+      <div class="metric"><div class="v ${cls(row['6m'])}">${fmt(row['6m'])}</div><div class="l">6 months</div></div>
+      <div class="metric"><div class="v ${cls(row['1y'])}">${fmt(row['1y'])}</div><div class="l">1 year</div></div>
+    </div>` : `<div class="empty">No detail available for ${esc(ticker)}.</div>`;
+  document.getElementById("tileSheetBackdrop").classList.add("open");
+  document.getElementById("tileSheet").classList.add("open");
 }
-function renderRotation(){
-  const asof = `As of ${ROT.current.as_of} · leadership: ${ROT.current.leadership}`;
-  document.getElementById("sec-asof").textContent = asof;
-  document.getElementById("size-asof").textContent = asof;
+function closeTileSheet(){
+  document.getElementById("tileSheetBackdrop").classList.remove("open");
+  document.getElementById("tileSheet").classList.remove("open");
+}
+document.getElementById("tileSheetBackdrop").onclick = closeTileSheet;
+
+// Macro pulse: one collapsed line (VIX / 10Y / HY spread / leadership run
+// age), full table + explainers behind the <details> tap.
+function renderMacroPulse(){
+  const mac = ROT.macro || [];
+  const byKey = k => mac.find(m=>m.key===k);
+  const vix = byKey("VIX"), dgs10 = byKey("DGS10"), hy = byKey("BAMLH0A0HYM2");
+  const rd = ROT.run_durations?.current;
+  const line = [
+    vix ? `VIX ${vix.value}` : null,
+    dgs10 ? `10Y ${dgs10.value}%` : null,
+    hy ? `HY spread ${hy.value}%` : null,
+    rd ? `${rd.label} leading ${rd.age_weeks}w` : null,
+  ].filter(Boolean).join(" · ");
+  document.getElementById("macro-pulse-line").textContent = "Macro pulse — " + (line || "no data yet");
+  document.getElementById("mac-table").innerHTML = mac.length ?
+    `<tr><th>Series</th><th>Value</th><th>3M chg</th><th>1Y chg</th><th>As of</th></tr>`+
+    mac.map(m=>`<tr><td><b>${m.label}</b></td>
+      <td>${m.value}${m.unit}</td>
+      <td>${m.chg_3m==null?"–":(m.chg_3m>0?"+":"")+m.chg_3m}</td>
+      <td>${m.chg_1y==null?"–":(m.chg_1y>0?"+":"")+m.chg_1y}</td>
+      <td style="color:var(--dim)">${m.asof}</td></tr>`).join("")
+    : `<tr><td class="empty">No macro data — rerun the Rotation Engine workflow.</td></tr>`;
+  document.getElementById("mac-help").innerHTML =
+    mac.map(m=>`<details><summary>${m.label}</summary><p>${m.explain}</p></details>`).join("");
   const hmmEl = document.getElementById("hmm-regime");
   if(ROT.hmm_regime?.current){
     const hr = ROT.hmm_regime;
@@ -512,23 +555,17 @@ function renderRotation(){
     hmmEl.textContent = `Data-driven comparison (fitted HMM, not a hand rule): `+
       `${hr.current.state_label} (${Math.round(hr.current.probabilities[hr.current.state_label]*100)}% prob.)`;
   }
-  document.getElementById("sec-table").innerHTML = tableHTML(rsRows(false));
-  document.getElementById("size-table").innerHTML = tableHTML(rsRows(true));
-  curveChart("sec-chart", false);
-  curveChart("size-chart", true);
-  const mac = ROT.macro||[];
-  document.getElementById("mac-asof").textContent =
-    mac.length ? "Latest official readings; each series updates on its own schedule."
-               : "No macro data — rerun the Rotation Engine workflow with the updated script.";
-  document.getElementById("mac-table").innerHTML =
-    `<tr><th>Series</th><th>Value</th><th>3M chg</th><th>1Y chg</th><th>As of</th></tr>`+
-    mac.map(m=>`<tr><td><b>${m.label}</b></td>
-      <td>${m.value}${m.unit}</td>
-      <td>${m.chg_3m==null?"–":(m.chg_3m>0?"+":"")+m.chg_3m}</td>
-      <td>${m.chg_1y==null?"–":(m.chg_1y>0?"+":"")+m.chg_1y}</td>
-      <td style="color:var(--dim)">${m.asof}</td></tr>`).join("");
-  document.getElementById("mac-help").innerHTML =
-    mac.map(m=>`<details><summary>${m.label}</summary><p>${m.explain}</p></details>`).join("");
+}
+// Interim single-line header; Stage E replaces this with the full 2-3
+// sentence template (regime + leadership + setup-count clauses).
+function renderNarrativeHeader(){
+  document.getElementById("desk-asof").textContent =
+    `As of ${ROT.current.as_of} · leadership: ${ROT.current.leadership}`;
+}
+function renderRotation(){
+  renderNarrativeHeader();
+  renderHeatStrip();
+  renderMacroPulse();
 }
 
 /* chat */
@@ -563,12 +600,11 @@ async function send(){
   const focusEl = document.getElementById("focus");
   const focus = focusEl.value.trim().toUpperCase();
   focusEl.value = focus;
-  const pass = document.getElementById("pass").value.trim()
-    || localStorage.getItem("pm_pass") || "";
+  const pass = getPassphrase();
   const err = document.getElementById("chat-err");
   err.textContent = "";
   if(!q) return;
-  if(!pass){ err.textContent="Set the app passphrase in the sidebar first."; return; }
+  if(!pass){ err.textContent="Set the app passphrase first (top bar on mobile, sidebar on desktop)."; return; }
   if(focus && !TICKER_RE.test(focus)){
     err.textContent = "Focus ticker doesn't look valid — letters only, 1-6 characters (e.g. SMH, BRK.B), or leave it blank for all assets.";
     return;
@@ -577,7 +613,7 @@ async function send(){
   thread.insertAdjacentHTML("beforeend",
     `<div class="msg user"><div class="bubble">${esc(q)}</div></div>
      <div class="thinking" id="think">Reading the evidence…</div>`);
-  thread.scrollTop = thread.scrollHeight;
+  document.getElementById("desk-scroll").scrollTop = document.getElementById("desk-scroll").scrollHeight;
   document.getElementById("q").value = "";
   document.getElementById("send").disabled = true;
   try{
@@ -587,7 +623,7 @@ async function send(){
         question:q})});
     const d = await r.json();
     if(!r.ok||d.error) throw new Error(d.error==="bad passphrase"
-      ? "Passphrase rejected — check the sidebar passphrase vs Supabase secret."
+      ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
       : (d.error||"Request failed") + (d.detail ? ": "+String(d.detail).slice(0,200) : ""));
     document.getElementById("think").outerHTML =
       `<div class="msg ai"><div class="bubble">${aiCard(d)}</div></div>`;
@@ -596,7 +632,7 @@ async function send(){
     err.textContent = e.message;
   }finally{
     document.getElementById("send").disabled = false;
-    thread.scrollTop = thread.scrollHeight;
+    document.getElementById("desk-scroll").scrollTop = document.getElementById("desk-scroll").scrollHeight;
   }
 }
 document.getElementById("send").onclick = send;
@@ -625,15 +661,14 @@ const RECLABEL_CLASS = {
 };
 
 async function mmCall(op, payload){
-  const pass = document.getElementById("pass").value.trim()
-    || localStorage.getItem("pm_pass") || "";
-  if(!pass) throw new Error("Set the app passphrase in the sidebar first.");
+  const pass = getPassphrase();
+  if(!pass) throw new Error("Set the app passphrase first (top bar on mobile, sidebar on desktop).");
   const r = await fetch(MM_FN_URL, {method:"POST",
     headers:{"Content-Type":"application/json","x-app-key":pass},
     body: JSON.stringify({op, payload})});
   const d = await r.json();
   if(!r.ok || d.error) throw new Error(d.error === "bad passphrase"
-    ? "Passphrase rejected — check the sidebar passphrase vs Supabase secret."
+    ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
     : (d.error||"Request failed") + (d.detail ? ": "+String(d.detail).slice(0,200) : ""));
   return d;
 }
@@ -871,8 +906,8 @@ async function loadScanner(){
         </div>
       </div>`).join("");
     listEl.querySelectorAll(".sc-view").forEach(btn => btn.onclick = () => {
-      document.querySelector('nav button[data-v="forecast"]').click();
       fcLoadAndRender(btn.dataset.ticker);
+      document.getElementById("fc-result").scrollIntoView({behavior:"smooth", block:"start"});
     });
   }catch(e){
     asofEl.textContent = "";
@@ -1128,8 +1163,8 @@ async function askQuestion(){
   err.classList.remove("show");
   document.getElementById("ask-result").style.display = "none";
   if(!q){ err.textContent = "Type a question first."; err.classList.add("show"); return; }
-  const pass = document.getElementById("pass").value.trim() || localStorage.getItem("pm_pass") || "";
-  if(!pass){ err.textContent = "Set the app passphrase in the sidebar first."; err.classList.add("show"); return; }
+  const pass = getPassphrase();
+  if(!pass){ err.textContent = "Set the app passphrase first (top bar on mobile, sidebar on desktop)."; err.classList.add("show"); return; }
   const btn = document.getElementById("ask-go");
   btn.disabled = true;
   document.getElementById("ask-spin").classList.add("show");
@@ -1139,7 +1174,7 @@ async function askQuestion(){
       body: JSON.stringify({question:q})});
     const d = await r.json();
     if(!r.ok || d.error) throw new Error(d.error === "bad passphrase"
-      ? "Passphrase rejected — check the sidebar passphrase vs Supabase secret."
+      ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
       : (d.error||"Request failed") + (d.detail?": "+String(d.detail).slice(0,200):""));
     document.getElementById("ask-answer").innerHTML =
       `<div style="white-space:pre-wrap">${esc(d.answer||"(no answer)")}</div>`;
@@ -1160,6 +1195,32 @@ async function askQuestion(){
 const MM_SEARCH_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/mm-search";
 document.getElementById("ask-go").onclick = askQuestion;
 document.getElementById("ask-q").addEventListener("keydown", e=>{ if(e.key==="Enter") askQuestion(); });
+
+/* ---------- studies (archive) ---------- */
+let studiesLoaded = false;
+async function loadCompletedStudies(){
+  if(studiesLoaded) return;
+  studiesLoaded = true;
+  const el = document.getElementById("studies-completed");
+  try{
+    const r = await fetch("data/extension_overlay.json",{cache:"no-store"});
+    if(!r.ok) throw new Error("No extension-overlay digest yet.");
+    const d = await r.json();
+    const regime = d.current?.regime_tag;
+    const cohort = regime ? d.cohorts?.[regime] : null;
+    const caveat = (d.meta?.caveats||[])[0] || "";
+    el.innerHTML = !cohort ? `<div class="empty">No cohort data for the current regime yet.</div>` : `
+      <p>${esc(d.current.symbol)} is ${d.current.ext_pct}% above its 200-day average —
+        ${cohort.n} historical analog episodes exist in the same "${esc(regime)}" revisions regime.</p>
+      <p>Median forward return across that cohort over the next ~126 trading days:
+        ${cohort.median_fwd_126d_pct>0?'+':''}${cohort.median_fwd_126d_pct}%, with a worst-case
+        interim drawdown of ${cohort.worst_max_dd_pct}%.</p>
+      <p style="color:var(--dim)">${esc(caveat)}</p>`;
+  }catch(e){
+    studiesLoaded = false;
+    el.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
 </script>
 </body>
 </html>

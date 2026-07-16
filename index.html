@@ -7,11 +7,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Macro App">
 <title>Macro App</title>
+<link rel="stylesheet" href="tokens.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-  :root{--bg:#F5F5F7;--panel:#EDEDF0;--card:#FFF;--line:rgba(0,0,0,.08);
-    --text:#1D1D1F;--dim:#6E6E73;--blue:#0071E3;--green:#248A3D;--red:#D70015;
-    --amber:#C04A00;--radius:16px}
   *{box-sizing:border-box;margin:0}
   html,body{height:100%}
   body{background:var(--bg);color:var(--text);display:flex;
@@ -117,12 +115,7 @@
   .errbox.show{display:block}
   .spin{display:none;text-align:center;color:var(--dim);padding:20px;font-size:13.5px}
   .spin.show{display:block}
-  .reclabel{display:inline-block;font-size:11.5px;font-weight:700;border-radius:999px;
-    padding:4px 11px;margin-bottom:8px}
-  .rec-long{background:rgba(36,138,61,.10);color:var(--green)}
-  .rec-defensive{background:rgba(215,0,21,.10);color:var(--red)}
-  .rec-neutral{background:rgba(0,113,227,.10);color:var(--blue)}
-  .rec-none{background:rgba(0,0,0,.06);color:var(--dim)}
+  /* .reclabel / .rec-* now come from tokens.css (shared with Scanner, tear sheet) */
   .metricrow{display:flex;flex-wrap:wrap;gap:14px 22px;margin:10px 0}
   .metric{min-width:110px}
   .metric .v{font-size:17px;font-weight:700}
@@ -153,9 +146,17 @@
   .regentry{border-top:1px solid var(--line);padding:8px 0;font-size:13px}
   .regentry:first-child{border-top:none}
 
+  /* Mobile nav: overlay sidebar + backdrop, dismissible by outside-tap.
+     (Stage B replaces this with a bottom tab bar once Desk/Journal/Studies
+     exist; this fixes the current hang-over-content bug in the meantime —
+     no backdrop meant nothing ever dismissed the panel on outside tap.) */
+  .nav-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:19;
+    opacity:0;pointer-events:none;transition:opacity .18s}
+  .nav-backdrop.show{opacity:1;pointer-events:auto}
   @media (max-width:720px){
-    aside{position:fixed;left:0;top:0;bottom:0;z-index:20;transform:translateX(-105%)}
-    aside.open{transform:translateX(0);box-shadow:0 0 40px rgba(0,0,0,.25)}
+    aside{position:fixed;left:0;top:0;bottom:0;z-index:20;transform:translateX(-105%);
+      transition:transform .2s}
+    aside.open{transform:translateX(0);box-shadow:var(--shadow-nav)}
     .topbar{display:flex}
     #view-chat{height:calc(100dvh - 110px)}
   }
@@ -163,6 +164,7 @@
 </head>
 <body>
 
+<div class="nav-backdrop" id="navBackdrop"></div>
 <aside id="side">
   <div class="brand">Macro App</div>
   <nav>
@@ -218,7 +220,11 @@
   <div class="view" id="view-sectors">
     <h1>Sectors</h1><div class="sub" id="sec-asof"></div>
     <div class="sub" id="hmm-regime" style="display:none"></div>
-    <div class="card"><h2>Relative strength vs SPY</h2><table id="sec-table"></table></div>
+    <div class="card"><h2>Relative strength vs SPY</h2><table id="sec-table">
+      <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
+      <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
+      <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
+    </table></div>
     <div class="card"><h2>Relative performance — trailing year</h2>
       <div class="chartwrap"><canvas id="sec-chart"></canvas></div></div>
   </div>
@@ -229,7 +235,10 @@
     <div class="card"><h2>Relative strength vs SPY</h2>
       <div class="sub">RSP = equal-weight (mega-cap concentration inverse),
       IWM = small caps, MGK = mega-cap growth.</div>
-      <table id="size-table"></table></div>
+      <table id="size-table">
+        <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
+        <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
+      </table></div>
     <div class="card"><h2>Relative performance — trailing year</h2>
       <div class="chartwrap"><canvas id="size-chart"></canvas></div></div>
   </div>
@@ -237,7 +246,10 @@
   <!-- MACRO -->
   <div class="view" id="view-macro">
     <h1>Macro</h1><div class="sub" id="mac-asof"></div>
-    <div class="card"><h2>Current readings</h2><table id="mac-table"></table></div>
+    <div class="card"><h2>Current readings</h2><table id="mac-table">
+      <tr><td class="skeleton skeleton-line" colspan="4">&nbsp;</td></tr>
+      <tr><td class="skeleton skeleton-line" colspan="4">&nbsp;</td></tr>
+    </table></div>
     <div class="card"><h2>What each one means</h2><div id="mac-help"></div></div>
   </div>
 
@@ -245,7 +257,8 @@
   <div class="view" id="view-scanner">
     <h1>Scanner</h1>
     <div class="sub" id="sc-asof">Today's Setups — event-gated, ranked shortlist from the daily scan.</div>
-    <div id="sc-list"></div>
+    <div id="sc-list"><div class="card skeleton skeleton-card"></div>
+      <div class="card skeleton skeleton-card"></div></div>
   </div>
 
   <!-- FORECAST -->
@@ -283,9 +296,9 @@
   <div class="view" id="view-journal">
     <h1>Journal</h1>
     <div class="sub" id="jr-sub">Decision history and open positions.</div>
-    <div class="card"><h2>Open decisions</h2><div id="jr-open"></div></div>
-    <div class="card"><h2>Approaching evaluation</h2><div id="jr-approaching"></div></div>
-    <div class="card"><h2>History</h2><div id="jr-history"></div></div>
+    <div class="card"><h2>Open decisions</h2><div id="jr-open"><div class="skeleton skeleton-card"></div></div></div>
+    <div class="card"><h2>Approaching evaluation</h2><div id="jr-approaching"><div class="skeleton skeleton-card"></div></div></div>
+    <div class="card"><h2>History</h2><div id="jr-history"><div class="skeleton skeleton-card"></div></div></div>
   </div>
 
   <!-- SCORECARDS -->
@@ -295,7 +308,9 @@
 
     <div class="card"><h2>Calibration</h2>
       <div class="metricrow" id="sca-cal-summary"></div>
-      <table id="sca-cal-table"></table>
+      <table id="sca-cal-table">
+        <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
+      </table>
     </div>
     <div class="card"><h2>Stand-down value</h2><div id="sca-standdown"></div></div>
     <div class="card"><h2>Override value</h2><table id="sca-override"></table></div>
@@ -357,16 +372,68 @@ document.getElementById("pass").onchange = e =>
 
 /* nav */
 const side = document.getElementById("side");
-document.getElementById("burger").onclick = ()=> side.classList.toggle("open");
+const navBackdrop = document.getElementById("navBackdrop");
+function openNav(){ side.classList.add("open"); navBackdrop.classList.add("show"); }
+function closeNav(){ side.classList.remove("open"); navBackdrop.classList.remove("show"); }
+document.getElementById("burger").onclick = ()=>
+  side.classList.contains("open") ? closeNav() : openNav();
+navBackdrop.onclick = closeNav;
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
   document.querySelectorAll(".view").forEach(v=>
     v.classList.toggle("on", v.id === "view-"+b.dataset.v));
-  side.classList.remove("open");
+  closeNav();
   if(b.dataset.v === "journal") loadJournal();
   if(b.dataset.v === "scanner") loadScanner();
   if(b.dataset.v === "scorecards") loadScorecards();
 });
+document.querySelectorAll("nav a").forEach(a => a.onclick = closeNav);
+
+/* pull-to-refresh (Desk-precursor: refreshes whichever digest-driven view
+   is on screen; Stage B moves the trigger surface onto the merged Desk) */
+(function(){
+  const mainEl = document.querySelector("main");
+  const indicator = document.createElement("div");
+  indicator.className = "ptr-indicator";
+  indicator.textContent = "Pull to refresh";
+  mainEl.insertBefore(indicator, mainEl.firstChild);
+  const THRESHOLD = 70;
+  let startY = null, dy = 0, pulling = false;
+  mainEl.addEventListener("touchstart", e=>{
+    pulling = mainEl.scrollTop <= 0;
+    startY = pulling ? e.touches[0].clientY : null;
+  }, {passive:true});
+  mainEl.addEventListener("touchmove", e=>{
+    if(!pulling || startY==null) return;
+    dy = e.touches[0].clientY - startY;
+    if(dy > 0 && mainEl.scrollTop <= 0){
+      indicator.classList.add("show");
+      indicator.textContent = dy > THRESHOLD ? "Release to refresh" : "Pull to refresh";
+    }
+  }, {passive:true});
+  mainEl.addEventListener("touchend", async ()=>{
+    if(!pulling) return;
+    pulling = false;
+    if(indicator.classList.contains("show") && dy > THRESHOLD){
+      indicator.classList.add("spin");
+      indicator.textContent = "Refreshing…";
+      await refreshActiveDigests();
+    }
+    indicator.classList.remove("show","spin");
+    dy = 0;
+  });
+})();
+
+async function refreshActiveDigests(){
+  try{
+    const r = await fetch("data/rotation_digest.json",{cache:"no-store"});
+    if(r.ok){ ROT = await r.json(); renderRotation(); }
+  }catch{}
+  const onId = document.querySelector(".view.on")?.id;
+  if(onId === "view-scanner"){ scannerLoaded = false; loadScanner(); }
+  if(onId === "view-journal") loadJournal();
+  if(onId === "view-scorecards") loadScorecards();
+}
 
 /* data */
 // Free-text ticker inputs (Forecast tab + chat focus) share one <datalist>

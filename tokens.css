@@ -1,0 +1,201 @@
+/* ==========================================================================
+   Macro App — shared design tokens
+   Every page links this before its own <style> block. Page-level CSS must
+   not redefine a value that exists here (colors, spacing, type, radius,
+   shadow, chip/confidence-label styling) — reference the variable/class
+   instead so every surface stays visually one system. Redesign directive
+   Stage A.
+   ========================================================================== */
+
+:root{
+  /* -------- surface -------- */
+  --bg:#F5F5F7;
+  --panel:#EDEDF0;
+  --chip:#EDEDF0;
+  --card:#FFFFFF;
+  --line:rgba(0,0,0,.08);
+
+  /* -------- text -------- */
+  --text:#1D1D1F;
+  --dim:#6E6E73;
+
+  /* -------- accent -------- */
+  --blue:#0071E3;
+  --green:#248A3D;
+  --red:#D70015;
+  --amber:#C04A00;
+
+  /* -------- confidence-label semantics --------
+     Reused anywhere a confidence_label/verdict is rendered: Forecast,
+     Scanner, Scorecards, tear sheet. Never assign these from vibes — only
+     from the computed confidence_label/recommendation_label fields. */
+  --confidence-high:var(--green);
+  --confidence-moderate:var(--blue);
+  --confidence-low:var(--dim);
+
+  /* -------- spacing scale -------- */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px;
+  --sp-5:20px; --sp-6:24px; --sp-8:32px;
+
+  /* -------- type scale -------- */
+  --fs-xs:11px; --fs-sm:12.5px; --fs-base:15px; --fs-md:15.5px;
+  --fs-lg:17px; --fs-xl:24px; --fs-2xl:30px;
+
+  /* -------- radius -------- */
+  --radius-sm:10px; --radius:16px; --radius-lg:20px; --radius-pill:999px;
+
+  /* -------- shadow -------- */
+  --shadow-card:0 1px 2px rgba(0,0,0,.03);
+  --shadow-float:0 1px 3px rgba(0,0,0,.06);
+  --shadow-sheet:0 -8px 30px rgba(0,0,0,.20);
+  --shadow-nav:0 0 40px rgba(0,0,0,.25);
+
+  /* -------- layout -------- */
+  --tap-min:44px;          /* global UX rule: minimum tap target */
+  --bottom-nav-h:58px;
+}
+
+/* ==========================================================================
+   Global UX rules (Stage A.3) — apply on every page that links this file.
+   ========================================================================== */
+
+/* 44px minimum tap targets everywhere clickable. Icon-only chips/badges
+   that are not interactive are unaffected (no button/a/input selector). */
+button, a.navlink, select, input[type="button"], input[type="submit"],
+.tap-min{
+  min-height:var(--tap-min);
+}
+nav button, .bottom-nav button, .sidefoot input, .composer button,
+.composer input, button.go, button.ghost, .hchip, .chip-btn{
+  min-height:var(--tap-min);
+}
+
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{
+    animation-duration:0.001ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:0.001ms !important;
+    scroll-behavior:auto !important;
+  }
+}
+
+/* -------- skeleton loading (replaces blank cards while digests fetch) ---- */
+.skeleton{
+  position:relative; overflow:hidden; background:var(--panel);
+  border-radius:var(--radius-sm); color:transparent !important;
+}
+.skeleton::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+  transform:translateX(-100%);
+  animation:skeleton-shimmer 1.3s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce){
+  .skeleton::after{ animation:none; display:none; }
+}
+@keyframes skeleton-shimmer{ 100%{ transform:translateX(100%); } }
+.skeleton-line{ height:13px; border-radius:6px; margin:6px 0; background:var(--panel); }
+.skeleton-card{ height:96px; border-radius:var(--radius); }
+
+/* -------- shared chip system -------- */
+.chip{
+  display:inline-flex; align-items:center; background:var(--chip); color:var(--dim);
+  font-size:var(--fs-sm); font-weight:600; border-radius:var(--radius-pill);
+  padding:4px 11px; gap:4px;
+}
+.chip-info{ background:rgba(0,113,227,.10); color:var(--blue); }
+.chip-good{ background:rgba(36,138,61,.10); color:var(--green); }
+.chip-warn{ background:rgba(192,74,0,.12); color:var(--amber); }
+.chip-bad{ background:rgba(215,0,21,.10); color:var(--red); }
+.chip-big{ font-size:var(--fs-base); padding:7px 14px; }
+
+/* -------- recommendation / confidence labels (shared: Forecast, Scanner,
+   Scorecards, tear sheet — moved out of index.html so every surface that
+   renders a recommendation_label uses the identical mapping) -------- */
+.reclabel{ display:inline-block; font-size:var(--fs-sm); font-weight:700;
+  border-radius:var(--radius-pill); padding:4px 11px; margin-bottom:8px; }
+.rec-long{ background:rgba(36,138,61,.10); color:var(--green); }
+.rec-defensive{ background:rgba(215,0,21,.10); color:var(--red); }
+.rec-neutral{ background:rgba(0,113,227,.10); color:var(--blue); }
+.rec-none{ background:rgba(0,0,0,.06); color:var(--dim); }
+.conf-high{ color:var(--confidence-high); }
+.conf-moderate{ color:var(--confidence-moderate); }
+.conf-low{ color:var(--confidence-low); }
+
+/* -------- bottom sheet (tear sheet, tap-to-expand heat-strip tiles) ------
+   Mobile: slides up from bottom, 80% height, swipe-down or backdrop-tap to
+   dismiss. Desktop: centered modal. Shared by any page that needs one. */
+.sheet-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:40;
+  opacity:0; pointer-events:none; transition:opacity .18s;
+}
+.sheet-backdrop.open{ opacity:1; pointer-events:auto; }
+.sheet{
+  position:fixed; left:0; right:0; bottom:0; z-index:41;
+  background:var(--card); border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow:var(--shadow-sheet); max-height:80vh; overflow-y:auto;
+  padding:var(--sp-2) var(--sp-4) calc(env(safe-area-inset-bottom) + var(--sp-4));
+  transform:translateY(100%); transition:transform .22s ease-out;
+}
+.sheet.open{ transform:translateY(0); }
+.sheet-grab{ width:36px; height:4px; border-radius:99px; background:var(--line);
+  margin:6px auto 10px; }
+@media (min-width:721px){
+  .sheet-backdrop{ display:flex; align-items:center; justify-content:center; }
+  .sheet{
+    position:relative; left:auto; right:auto; bottom:auto;
+    max-width:560px; width:92%; max-height:82vh; border-radius:var(--radius-lg);
+    transform:translateY(12px); opacity:0; transition:transform .18s, opacity .18s;
+  }
+  .sheet.open{ transform:translateY(0); opacity:1; }
+  .sheet-grab{ display:none; }
+}
+
+/* -------- bottom tab bar (mobile nav, ≤768px — Stage B wires the 3
+   Desk/Journal/Studies destinations into this shell) -------- */
+.bottom-nav{
+  display:none; position:fixed; left:0; right:0; bottom:0; z-index:30;
+  background:var(--card); border-top:1px solid var(--line);
+  padding:6px 6px calc(env(safe-area-inset-bottom) + 6px);
+  box-shadow:0 -1px 8px rgba(0,0,0,.05);
+}
+.bottom-nav .row{ display:flex; }
+.bottom-nav button{
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
+  border:0; background:transparent; color:var(--dim); font:600 11px -apple-system,sans-serif;
+  padding:6px 4px; border-radius:12px; cursor:pointer;
+}
+.bottom-nav button.on{ color:var(--blue); }
+.bottom-nav button .ic{ font-size:19px; line-height:1; }
+@media (max-width:768px){
+  .bottom-nav{ display:block; }
+  body{ padding-bottom:var(--bottom-nav-h); }
+}
+
+/* -------- pull-to-refresh indicator (Desk) -------- */
+.ptr-indicator{
+  display:flex; align-items:center; justify-content:center; height:0;
+  overflow:hidden; color:var(--dim); font-size:var(--fs-sm);
+  transition:height .15s; text-align:center;
+}
+.ptr-indicator.show{ height:36px; }
+.ptr-indicator.spin::before{
+  content:""; display:inline-block; width:14px; height:14px; margin-right:6px;
+  border:2px solid var(--line); border-top-color:var(--blue); border-radius:50%;
+  animation:ptr-spin .6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce){
+  .ptr-indicator.spin::before{ animation:none; }
+}
+@keyframes ptr-spin{ 100%{ transform:rotate(360deg); } }
+
+/* -------- glossary tap-to-expand term (Stage C) -------- */
+.gloss{
+  border-bottom:1px dotted var(--dim); cursor:pointer; white-space:nowrap;
+}
+.gloss-pop{
+  display:none; background:var(--text); color:#fff; font-size:var(--fs-xs);
+  font-weight:500; border-radius:8px; padding:6px 9px; margin-top:4px;
+  max-width:260px; white-space:normal; box-shadow:var(--shadow-float);
+}
+.gloss-pop.open{ display:inline-block; }

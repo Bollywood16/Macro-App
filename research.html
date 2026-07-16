@@ -4,14 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Research — Rotation Radar</title>
+<link rel="stylesheet" href="tokens.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-  :root {
-    --bg: #F5F5F7; --card: #FFFFFF; --line: rgba(0,0,0,.08);
-    --text: #1D1D1F; --dim: #6E6E73; --blue: #0071E3;
-    --green: #248A3D; --red: #D70015; --amber: #C04A00;
-    --chip: #EDEDF0; --radius: 18px;
-  }
   * { box-sizing: border-box; margin: 0; }
   body {
     background: var(--bg); color: var(--text);
@@ -36,8 +31,7 @@
     padding: 9px 30px 9px 12px; font: 600 14px -apple-system, sans-serif;
     color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.04); }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-  .chip { background: var(--chip); border-radius: 999px; font-size: 12px;
-    font-weight: 600; padding: 4px 11px; color: var(--dim); }
+  /* base .chip now from tokens.css */
   .chip.on { background: rgba(36,138,61,.12); color: var(--green); }
   .chip.warn { background: rgba(215,0,21,.10); color: var(--red); }
   table { width: 100%; border-collapse: collapse; font-size: 13.5px;

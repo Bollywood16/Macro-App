@@ -16,6 +16,9 @@ on:
         required: false
         type: boolean
         default: false
+      source:
+        description: "Tag for features_json.source, e.g. 'chat' (blank = on_demand/batch default)"
+        required: false
 
 jobs:
   run-engine:
@@ -40,5 +43,8 @@ jobs:
           fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry-run"
+          fi
+          if [ -n "${{ inputs.source }}" ]; then
+            ARGS="$ARGS --source ${{ inputs.source }}"
           fi
           python scripts/forecast_engine.py $ARGS

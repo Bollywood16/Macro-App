@@ -473,7 +473,7 @@ def mm_journal(op, payload):
 
 
 def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
-            manual_price, market_status, dry_run, rotation_ctx=None):
+            manual_price, market_status, dry_run, rotation_ctx=None, source=None):
     ticker = asset["ticker"]
     close = universe_prices.get(ticker)
     if close is None or len(close) < 260:
@@ -578,6 +578,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
 
     features_json = {
         "as_of": as_of.isoformat(),
+        "source": source or "on_demand",
         "query_features": {f: (None if pd.isna(query[f]) else round(float(query[f]), 6))
                             for f in FEATURE_FIELDS},
         "normalization": norm_stats,
@@ -773,6 +774,10 @@ def main():
                      choices=["open", "closed", "pre", "post", "unknown"])
     ap.add_argument("--dry-run", action="store_true",
                      help="Compute and print only; skip mm-journal writes")
+    ap.add_argument("--source", default=None,
+                     help="Tag for features_json.source (e.g. 'chat', 'scanner'). "
+                          "Defaults to 'batch' for full-universe runs, 'on_demand' "
+                          "for a single --ticker run with no explicit tag.")
     args = ap.parse_args()
 
     universe = load_universe()
@@ -803,12 +808,13 @@ def main():
     rotation_ctx = build_rotation_context(universe_prices)
 
     on_demand = args.ticker is not None
+    source = args.source or ("on_demand" if on_demand else "batch")
     for t in tickers:
         asset = {"ticker": t, "label": label_by_ticker.get(t, t)}
         market_status = "closed" if not on_demand else args.market_status
         result = run_one(asset, universe_prices, spy_close, spy_trend_df,
                           vix, oas, args.price if on_demand else None,
-                          market_status, args.dry_run, rotation_ctx)
+                          market_status, args.dry_run, rotation_ctx, source=source)
         if on_demand:
             if not result:
                 # A silent no-op run shows green in Actions and leaves the

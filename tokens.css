@@ -172,6 +172,25 @@ nav button, .bottom-nav button, .sidefoot input, .composer button,
   body{ padding-bottom:var(--bottom-nav-h); }
 }
 
+/* -------- one-tap decision capture (Stage D) --------
+   Zero-friction "Did you act on this?" row under any verdict. Dismissible,
+   never blocks the surrounding content. */
+.dcap{
+  display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+  margin-top:10px; padding-top:10px; border-top:1px solid var(--line);
+  font-size:var(--fs-sm); color:var(--dim);
+}
+.dcap-q{ margin-right:2px; }
+.dcap-btn{
+  border:1px solid var(--line); background:var(--card); color:var(--text);
+  font:600 12px -apple-system,sans-serif; border-radius:var(--radius-pill);
+  padding:6px 12px; cursor:pointer; min-height:var(--tap-min);
+}
+.dcap-x{
+  border:0; background:transparent; color:var(--dim); cursor:pointer;
+  margin-left:auto; font-size:16px; min-height:var(--tap-min); min-width:var(--tap-min);
+}
+
 /* -------- pull-to-refresh indicator (Desk) -------- */
 .ptr-indicator{
   display:flex; align-items:center; justify-content:center; height:0;

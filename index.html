@@ -288,6 +288,12 @@
         <tr><td class="skeleton skeleton-line" colspan="5">&nbsp;</td></tr>
       </table>
     </div>
+    <div class="card"><h2>Misses</h2>
+      <div class="sub">Matured forecasts where the call was wrong, grouped by the conditions
+        at forecast time. No grouping shown below 4 forecasts.</div>
+      <div id="sca-misses"><div class="skeleton skeleton-card"></div></div>
+      <div class="sub" id="sca-misses-note" style="margin-top:8px;margin-bottom:0"></div>
+    </div>
     <div class="card"><h2>Stand-down value</h2><div id="sca-standdown"></div></div>
     <div class="card"><h2>Override value</h2><table id="sca-override"></table></div>
     <div class="card"><h2>Entry slippage</h2><table id="sca-slippage"></table></div>
@@ -627,7 +633,13 @@ async function send(){
       ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
       : (d.error||"Request failed") + (d.detail ? ": "+String(d.detail).slice(0,200) : ""));
     document.getElementById("think").outerHTML =
-      `<div class="msg ai"><div class="bubble">${aiCard(d)}</div></div>`;
+      `<div class="msg ai"><div class="bubble">${aiCard(d)}${focus ? decisionCaptureHTML(focus) : ""}</div></div>`;
+    if(focus){
+      wireDecisionCapture(thread);
+      // Stage D1: every ranked call surfaced in chat gets graded like any
+      // other forecast — fire-and-forget, never blocks the chat response.
+      mmCall("trigger_forecast", {ticker: focus, source: "chat"}).catch(()=>{});
+    }
   }catch(e){
     document.getElementById("think")?.remove();
     err.textContent = e.message;
@@ -672,6 +684,62 @@ async function mmCall(op, payload){
     ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
     : (d.error||"Request failed") + (d.detail ? ": "+String(d.detail).slice(0,200) : ""));
   return d;
+}
+
+/* ---------- one-tap decision capture (Stage D2) ----------
+   Appears under chat's verdict card and each Scanner row — the two surfaces
+   that don't already have Journal's full decision form. Resolves the actual
+   forecast_id (and the model's own recommendation_label, for the "Took it"
+   action) lazily at click time, since a chat-triggered forecast may still
+   be mid-flight in Actions. Zero-friction: never blocks the surrounding
+   content, and is dismissible without acting. */
+let dcapSeq = 0;
+function decisionCaptureHTML(ticker, knownForecastId, knownRecLabel){
+  const uid = ++dcapSeq;
+  return `<div class="dcap" id="dcap-${uid}" data-ticker="${esc(ticker)}"
+    data-fid="${knownForecastId||''}" data-rec="${esc(knownRecLabel||'')}">
+    <span class="dcap-q">Did you act on this?</span>
+    <button class="dcap-btn" data-a="took">Took it</button>
+    <button class="dcap-btn" data-a="stand_down">Passed</button>
+    <button class="dcap-btn" data-a="watch">Watching</button>
+    <button class="dcap-x" aria-label="Dismiss">&times;</button>
+  </div>`;
+}
+function impliedAction(recLabel){
+  if(BULLISH_LABELS.has(recLabel)) return "buy";
+  if(BEARISH_LABELS.has(recLabel)) return "sell";
+  return "hold";
+}
+function wireDecisionCapture(root){
+  root.querySelectorAll(".dcap").forEach(el=>{
+    if(el.dataset.wired) return;
+    el.dataset.wired = "1";
+    el.querySelector(".dcap-x").onclick = () => el.remove();
+    el.querySelectorAll(".dcap-btn").forEach(btn => btn.onclick = async () => {
+      const ticker = el.dataset.ticker;
+      el.innerHTML = `<span class="dcap-q">Logging…</span>`;
+      try{
+        let forecastId = el.dataset.fid || null;
+        let recLabel = el.dataset.rec || null;
+        if(!forecastId){
+          const r = await mmCall("get_latest_forecast", {ticker});
+          const row = r.forecasts?.find(f=>f.horizon_days===5) || r.forecasts?.[0];
+          if(!row){
+            el.innerHTML = `<span class="dcap-q">No forecast on file yet for ${esc(ticker)} — `+
+              `if this was just triggered from chat, try again in a minute.</span>`;
+            return;
+          }
+          forecastId = row.id;
+          recLabel = row.evidence_json?.recommendation_label;
+        }
+        const action = btn.dataset.a === "took" ? impliedAction(recLabel) : btn.dataset.a;
+        await mmCall("create_decision", {forecast_id: forecastId, action});
+        el.innerHTML = `<span class="dcap-q">Logged.</span>`;
+      }catch(e){
+        el.innerHTML = `<span class="dcap-q">${esc(e.message)}</span>`;
+      }
+    });
+  });
 }
 
 async function loadUniverse(){
@@ -908,12 +976,14 @@ async function loadScanner(){
             <div class="metric"><div class="v">${s.opportunity_score}</div><div class="l">${gloss("opportunity score","Opportunity score")}</div></div>
           </div>
           <button class="ghost sc-view" data-ticker="${esc(s.ticker)}" style="width:auto;padding:9px 16px">View &amp; decide →</button>
+          ${decisionCaptureHTML(s.ticker, s.forecast_id, s.recommendation_label)}
         </div>
       </div>`).join("");
     listEl.querySelectorAll(".sc-view").forEach(btn => btn.onclick = () => {
       fcLoadAndRender(btn.dataset.ticker);
       document.getElementById("fc-result").scrollIntoView({behavior:"smooth", block:"start"});
     });
+    wireDecisionCapture(listEl);
   }catch(e){
     asofEl.textContent = "";
     listEl.innerHTML = `<div class="card empty">${esc(e.message)}</div>`;
@@ -1017,11 +1087,72 @@ async function loadScorecards(){
     ]);
     renderCalibration(cal.rows||[]);
     renderUserJudgment(decRes.decisions||[], unactioned.forecasts||[]);
+    renderMisses(cal.rows||[], (decRes.decisions||[]).length);
     subEl.textContent = "Model calibration and personal decision-judgment, computed from matured outcomes.";
   }catch(e){
     subEl.textContent = e.message;
   }
   loadRegistry();
+}
+
+// ---------- Misses view (Stage D3) ----------
+// Groups matured-but-wrong forecasts by the regime/leadership/source
+// conditions recorded in features_json at forecast time. No grouping is
+// shown with fewer than 4 matured forecasts under that condition — a
+// concentration of misses in an n=2 bucket isn't a pattern, it's noise.
+function leadershipTiltBucket(pct){
+  if(pct == null) return null;
+  if(pct > 2) return "cyclical-tilted";
+  if(pct < -2) return "defensive-tilted";
+  return "neutral-tilted";
+}
+function missesGroups(rows){
+  const matured = rows.filter(r=>r.event_occurred!=null && r.p_positive!=null);
+  const tagged = matured.map(r=>({
+    wrong: r.event_occurred !== (r.p_positive >= 0.5),
+    vix: r.features_json?.regime?.vix ?? null,
+    credit: r.features_json?.regime?.credit ?? null,
+    leadership: leadershipTiltBucket(r.features_json?.query_features?.rotation_tilt_pct),
+    source: r.features_json?.source ?? "engine",
+  }));
+  const totalMisses = tagged.filter(r=>r.wrong).length;
+  const dims = [["vix","VIX"],["credit","Credit"],["leadership","Leadership tilt"],["source","Source"]];
+  const groups = [];
+  for(const [key,label] of dims){
+    const byVal = {};
+    for(const r of tagged){
+      if(r[key]==null) continue;
+      (byVal[r[key]] ??= []).push(r);
+    }
+    for(const [val,list] of Object.entries(byVal)){
+      if(list.length < 4) continue;
+      const missN = list.filter(r=>r.wrong).length;
+      if(missN === 0) continue;
+      groups.push({dim:label, value:val, n:list.length, missN, missRate:missN/list.length, totalMisses});
+    }
+  }
+  groups.sort((a,b)=>b.missRate-a.missRate);
+  return {groups, totalMisses, totalMatured: matured.length};
+}
+function renderMisses(rows, decisionCount){
+  const {groups, totalMisses, totalMatured} = missesGroups(rows);
+  const el = document.getElementById("sca-misses");
+  if(!totalMatured){
+    el.innerHTML = `<div class="empty">No matured forecasts yet.</div>`;
+  } else if(!groups.length){
+    el.innerHTML = `<div class="empty">${totalMisses} of ${totalMatured} matured forecasts missed, `+
+      `but no condition has reached the 4-forecast minimum to show a pattern yet.</div>`;
+  } else {
+    el.innerHTML = groups.slice(0,6).map(g=>
+      `<div class="jcard"><div class="top"><span>${esc(g.dim)} = ${esc(g.value)}</span>
+        <span style="color:var(--dim);font-weight:400">n=${g.n}</span></div>
+       <div class="meta">${g.missN} of ${g.n} forecasts under this condition missed `+
+       `(${Math.round(g.missRate*100)}%) — ${g.missN} of your ${g.totalMisses} total misses.</div></div>`
+    ).join("");
+  }
+  document.getElementById("sca-misses-note").textContent =
+    `The model doesn't update on single misses — it accumulates them until patterns are `+
+    `statistically real (target: 40+ decisions). Currently at ${decisionCount}.`;
 }
 
 function renderCalibration(rows){

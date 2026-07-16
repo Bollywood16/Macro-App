@@ -191,6 +191,7 @@ def format_setup(s):
     row, ev, ft = s["row"], s["ev"], s["ft"]
     return {
         "ticker": s["ticker"], "label": s["label"], "triggers_active": s["triggers"],
+        "forecast_id": row.get("id"),
         "opportunity_score": s["opportunity_score"],
         "recommendation_label": ev.get("recommendation_label"),
         "model_action": ev.get("model_action"),

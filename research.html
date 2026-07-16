@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Research — Rotation Radar</title>
 <link rel="stylesheet" href="tokens.css">
+<script src="glossary.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; }
@@ -171,7 +172,7 @@ function render() {
   document.getElementById("cur-sub").textContent = "As of " + c.as_of;
   const chips = [];
   for (const [k,v] of Object.entries(c.regimes))
-    chips.push(`<span class="chip ${v==="widening"||v==="stressed"||v==="rolling"||v==="below"?"warn":(v==="unknown"?"":"on")}">${k}: ${v}</span>`);
+    chips.push(`<span class="chip ${v==="widening"||v==="stressed"||v==="rolling"||v==="below"?"warn":(v==="unknown"?"":"on")}">${gloss(k)}: ${v}</span>`);
   for (const [k,v] of Object.entries(c.triggers_active))
     chips.push(`<span class="chip ${v?"warn":""}">${D.meta.triggers[k].label}: ${v?"ACTIVE":"not active"}</span>`);
   document.getElementById("cur-chips").innerHTML = chips.join("");
@@ -234,7 +235,7 @@ function render() {
             <span style="color:var(--dim);font-weight:400"> / DD ${fmt(e.max_dd_pct)}</span></span>
         </div>
         <div class="chips" style="margin-top:4px">${Object.entries(e.regimes)
-          .map(([k,v])=>`<span class="chip">${k}: ${v}</span>`).join("")}</div>
+          .map(([k,v])=>`<span class="chip">${gloss(k)}: ${v}</span>`).join("")}</div>
         ${e.news && e.news.length ? `<div class="news">📰 ` +
           e.news.map(nw=>`${nw.title} <span style="opacity:.6">(${nw.source})</span>`)
           .join(" · ") + `</div>` : ""}

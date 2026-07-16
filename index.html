@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Macro App">
 <title>Macro App</title>
 <link rel="stylesheet" href="tokens.css">
+<script src="glossary.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0}
@@ -493,8 +494,8 @@ function rsColorClass(v){
 function renderHeatStrip(){
   const rows = ROT?.rs_table || [];
   const el = document.getElementById("heat-strip");
-  document.getElementById("heat-asof").textContent = rows.length
-    ? `As of ${ROT.current.as_of} · ranked by 3-month relative strength vs SPY. Tap a tile for detail.`
+  document.getElementById("heat-asof").innerHTML = rows.length
+    ? `As of ${esc(ROT.current.as_of)} · ranked by 3-month ${gloss("relative strength")} vs SPY. Tap a tile for detail.`
     : "No rotation data yet.";
   el.innerHTML = rows.length ? rows.map(r=>`
     <div class="hchip chip ${rsColorClass(r["3m"])}" data-ticker="${esc(r.ticker)}" data-label="${esc(r.label||'')}">
@@ -507,7 +508,7 @@ function openTileSheet(ticker, label){
   const row = (ROT?.rs_table||[]).find(r=>r.ticker===ticker);
   document.getElementById("tileSheetBody").innerHTML = row ? `
     <h2>${esc(ticker)} <span style="color:var(--dim);font-weight:400">${esc(label||'')}</span></h2>
-    <div class="sub">Relative strength vs SPY, as of ${esc(ROT.current.as_of)}</div>
+    <div class="sub">${gloss("relative strength","Relative strength")} vs SPY, as of ${esc(ROT.current.as_of)}</div>
     <div class="metricrow">
       <div class="metric"><div class="v ${cls(row['1m'])}">${fmt(row['1m'])}</div><div class="l">1 month</div></div>
       <div class="metric"><div class="v ${cls(row['3m'])}">${fmt(row['3m'])}</div><div class="l">3 months</div></div>
@@ -559,8 +560,8 @@ function renderMacroPulse(){
 // Interim single-line header; Stage E replaces this with the full 2-3
 // sentence template (regime + leadership + setup-count clauses).
 function renderNarrativeHeader(){
-  document.getElementById("desk-asof").textContent =
-    `As of ${ROT.current.as_of} · leadership: ${ROT.current.leadership}`;
+  document.getElementById("desk-asof").innerHTML =
+    `As of ${esc(ROT.current.as_of)} · ${gloss("leadership")}: ${esc(ROT.current.leadership)}`;
 }
 function renderRotation(){
   renderNarrativeHeader();
@@ -766,18 +767,23 @@ function fcRenderCard(){
   h += `<h2 style="margin-top:2px">${esc(row.ticker)} · ${row.horizon_days} trading days</h2>`;
   h += `<div class="sub">As of ${esc(new Date(row.as_of_ts).toLocaleString())} ·
     effective price $${Number(row.effective_price).toFixed(2)}${ft.intraday_proxy?" (manual override)":""}</div>`;
+  // Plain-English verdict first (Stage C): the model's own prose action line
+  // and the reasons behind it, before any jargon numbers below.
+  if(ev.model_action) h += `<p style="font-size:14.5px;margin:6px 0">${esc(ev.model_action)}</p>`;
+  if(ev.why_it_triggered?.length) h += `<ul class="bl">`+
+    ev.why_it_triggered.slice(0,4).map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
   h += `<div class="hlist">`+fcHorizons.map(r=>
     `<div class="hchip ${r.horizon_days===fcSelectedHorizon?'on':''}" data-h="${r.horizon_days}">
        <div class="hd">${r.horizon_days}d</div>${pct0(r.p_positive)} pos · ${esc(r.confidence_label||'–')}
      </div>`).join("")+`</div>`;
   h += `<div class="metricrow">
-    <div class="metric"><div class="v">${pct0(row.p_positive)}</div><div class="l">Probability positive</div></div>
-    <div class="metric"><div class="v">${pct0(row.p_beat_benchmark)}</div><div class="l">Beat SPY</div></div>
+    <div class="metric"><div class="v">${pct0(row.p_positive)}</div><div class="l">${gloss("p_positive","Probability positive")}</div></div>
+    <div class="metric"><div class="v">${pct0(row.p_beat_benchmark)}</div><div class="l">${gloss("p_beat_benchmark","Beat SPY")}</div></div>
     <div class="metric"><div class="v">${pct(row.q50)}</div><div class="l">Median return</div></div>
-    <div class="metric"><div class="v">${pct(row.q20)} to ${pct(row.q80)}</div><div class="l">20th–80th pct</div></div>
-    <div class="metric"><div class="v">${pct(row.expected_mae)}</div><div class="l">Expected max adverse</div></div>
-    <div class="metric"><div class="v">${row.n_independent??'–'}</div><div class="l">Independent episodes</div></div>
-    <div class="metric"><div class="v">${esc(row.confidence_label||'–')} (${row.confidence_score!=null?Math.round(row.confidence_score*100)+'%':'–'})</div><div class="l">Confidence</div></div>
+    <div class="metric"><div class="v">${pct(row.q20)} to ${pct(row.q80)}</div><div class="l">${gloss("q20","20th")}–${gloss("q80","80th")} pct</div></div>
+    <div class="metric"><div class="v">${pct(row.expected_mae)}</div><div class="l">${gloss("expected max adverse","Expected max adverse")}</div></div>
+    <div class="metric"><div class="v">${row.n_independent??'–'}</div><div class="l">${gloss("n_independent","Independent episodes")}</div></div>
+    <div class="metric"><div class="v">${esc(row.confidence_label||'–')} (${row.confidence_score!=null?Math.round(row.confidence_score*100)+'%':'–'})</div><div class="l">${gloss("confidence","Confidence")}</div></div>
   </div>`;
   const vm = ev.vol_management || {};
   if(vm.realized_vol_21d_annualized!=null){
@@ -786,15 +792,12 @@ function fcRenderCard(){
       <div class="metric"><div class="v">${vm.expected_return_per_unit_vol!=null?vm.expected_return_per_unit_vol.toFixed(2):'–'}</div><div class="l">Return per unit vol (${row.horizon_days}d)</div></div>
     </div>`;
   }
-  if(ev.why_it_triggered?.length) h += `<div class="klabel">Why it triggered</div><ul class="bl">`+
-    ev.why_it_triggered.map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
-  h += `<div class="klabel">Regime</div><div class="sub" style="margin-bottom:0">
-    VIX ${esc(rg.vix||'–')} · credit ${esc(rg.credit||'–')} · SPY-trend ${esc(rg.spy_trend||'–')}</div>`;
+  h += `<div class="klabel">${gloss("regime","Regime")}</div><div class="sub" style="margin-bottom:0">
+    ${gloss("VIX")} ${esc(rg.vix||'–')} · credit ${esc(rg.credit||'–')} · SPY-trend ${esc(rg.spy_trend||'–')}</div>`;
   if(ev.invalidation_risks?.length) h += `<div class="klabel">Invalidation risks</div><ul class="bl">`+
     ev.invalidation_risks.map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
   if(ev.warnings?.length) h += `<div class="klabel">Warnings</div><ul class="bl">`+
     ev.warnings.map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
-  h += `<div class="klabel">Model action</div><div class="sub" style="margin-bottom:0">${esc(ev.model_action||'')}</div>`;
   document.getElementById("fc-card").innerHTML = h;
   document.querySelectorAll(".hchip").forEach(chip => chip.onclick = () => {
     fcSelectedHorizon = Number(chip.dataset.h);
@@ -895,12 +898,14 @@ async function loadScanner(){
           <span class="reclabel ${RECLABEL_CLASS[s.recommendation_label]||'rec-none'}">
             ${RECLABEL_TEXT[s.recommendation_label]||s.recommendation_label||'–'}</span>
           <h2 style="margin-top:2px">${esc(s.ticker)} <span style="color:var(--dim);font-weight:400">${esc(s.label||'')}</span></h2>
+          ${s.model_action ? `<p style="font-size:14px;margin:4px 0">${esc(s.model_action)}</p>` : ""}
+          ${s.why_it_triggered?.length ? `<p style="font-size:12.5px;color:var(--dim);margin:2px 0 6px">${esc(s.why_it_triggered[0])}</p>` : ""}
           <div>${(s.triggers_active||[]).map(t=>`<span class="triggerchip">${esc(t.replace(/_/g,' '))}</span>`).join("")}</div>
           <div class="metricrow">
-            <div class="metric"><div class="v">${pct0(s.p_positive)}</div><div class="l">Probability positive</div></div>
-            <div class="metric"><div class="v">${pct(s.expected_mae)}</div><div class="l">Expected max adverse</div></div>
-            <div class="metric"><div class="v">${esc(s.confidence_label||'–')}</div><div class="l">Confidence</div></div>
-            <div class="metric"><div class="v">${s.opportunity_score}</div><div class="l">Opportunity score</div></div>
+            <div class="metric"><div class="v">${pct0(s.p_positive)}</div><div class="l">${gloss("p_positive","Probability positive")}</div></div>
+            <div class="metric"><div class="v">${pct(s.expected_mae)}</div><div class="l">${gloss("expected max adverse","Expected max adverse")}</div></div>
+            <div class="metric"><div class="v">${esc(s.confidence_label||'–')}</div><div class="l">${gloss("confidence","Confidence")}</div></div>
+            <div class="metric"><div class="v">${s.opportunity_score}</div><div class="l">${gloss("opportunity score","Opportunity score")}</div></div>
           </div>
           <button class="ghost sc-view" data-ticker="${esc(s.ticker)}" style="width:auto;padding:9px 16px">View &amp; decide →</button>
         </div>
@@ -1028,9 +1033,9 @@ function renderCalibration(rows){
 
   document.getElementById("sca-cal-summary").innerHTML = `
     <div class="metric"><div class="v">${matured.length}</div><div class="l">Matured forecasts</div></div>
-    <div class="metric"><div class="v">${brierVals.length?mean(brierVals).toFixed(3):'–'}</div><div class="l">Mean Brier</div></div>
-    <div class="metric"><div class="v">${llVals.length?mean(llVals).toFixed(3):'–'}</div><div class="l">Mean log loss</div></div>
-    <div class="metric"><div class="v">${coverage!=null?pct0(coverage):'–'}</div><div class="l">Interval coverage</div></div>`;
+    <div class="metric"><div class="v">${brierVals.length?mean(brierVals).toFixed(3):'–'}</div><div class="l">Mean ${gloss("Brier score","Brier")}</div></div>
+    <div class="metric"><div class="v">${llVals.length?mean(llVals).toFixed(3):'–'}</div><div class="l">Mean ${gloss("log loss")}</div></div>
+    <div class="metric"><div class="v">${coverage!=null?pct0(coverage):'–'}</div><div class="l">${gloss("interval coverage","Interval coverage")}</div></div>`;
 
   const buckets = calibrationBuckets(matured);
   document.getElementById("sca-cal-table").innerHTML =

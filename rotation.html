@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Rotation">
 <title>Rotation — Rotation Radar</title>
 <link rel="stylesheet" href="tokens.css">
+<script src="glossary.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0}
@@ -75,7 +76,7 @@
     <div class="chips" id="regimes"></div>
     <div class="sub" style="margin-top:10px" id="proxies"></div>
     <div id="hmm-block" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
-      <div class="sub" style="margin-bottom:6px">Data-driven comparison (fitted HMM, not a hand rule) — see note for what it does and doesn't do</div>
+      <div class="sub" style="margin-bottom:6px">Data-driven comparison (fitted <span class="gloss" data-term="HMM">HMM</span>, not a hand rule) — see note for what it does and doesn't do</div>
       <div class="chips" id="hmm-regime"></div>
     </div>
   </div>
@@ -132,13 +133,13 @@ async function load(){
   document.getElementById("app").style.display="block";
   document.getElementById("asof").textContent =
     "As of "+D.current.as_of+" · generated "+D.meta.generated_utc;
-  document.getElementById("lead").textContent = D.current.leadership;
+  document.getElementById("lead").innerHTML = gloss("leadership", D.current.leadership);
   const WARN_REGIME_VALUES = ["stressed","widening","rising",
     "stretched_short","stretched_long","elevated_fear","elevated_greed"];
   document.getElementById("regimes").innerHTML =
     Object.entries(D.current.regimes).map(([k,v]) =>
       `<span class="chip ${WARN_REGIME_VALUES.includes(v)?"warn":
-        (v==="unknown"?"":"on")}">${k}: ${v}</span>`).join("");
+        (v==="unknown"?"":"on")}">${gloss(k)}: ${v}</span>`).join("");
   if(D.hmm_regime?.current){
     document.getElementById("hmm-block").style.display = "block";
     const hr = D.hmm_regime;

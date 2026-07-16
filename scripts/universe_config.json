@@ -6,5 +6,11 @@
     { "ticker": "SPY",  "label": "S&P 500 (SPY)",        "valuation": true,  "use_revision_tags": false, "query": "stock market S&P 500" },
     { "ticker": "QQQ",  "label": "Nasdaq 100 (QQQ)",     "valuation": true,  "use_revision_tags": false, "query": "Nasdaq technology stocks" },
     { "ticker": "GLD",  "label": "Gold (GLD)",           "valuation": false, "use_revision_tags": false, "query": "gold price" }
-  ]
+  ],
+  "_analog_map_readme": "Nearest sector-analog peer for the TearSheet's relative-strip comparison (redesign directive Stage F2c). Ticker not listed, or mapped to null, means 'no sector analog' -- the UI must say so honestly rather than force a comparison.",
+  "analog_map": {
+    "SMH": "XLK",
+    "XLE": "XLB",
+    "GLD": null
+  }
 }

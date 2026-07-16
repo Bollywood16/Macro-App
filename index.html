@@ -235,12 +235,13 @@
     </div>
   </div>
 
-  <!-- tap-to-expand bottom sheet for heat-strip tiles. Stage F promotes this
-       into the full shared TearSheet reused from every ticker mention. -->
-  <div class="sheet-backdrop" id="tileSheetBackdrop"></div>
-  <div class="sheet" id="tileSheet">
-    <div class="sheet-grab"></div>
-    <div id="tileSheetBody"></div>
+  <!-- ETF TearSheet (Stage F): single shared component, opened from every
+       ticker mention app-wide. Bottom sheet on mobile (swipe-down or
+       backdrop-tap to dismiss), modal on desktop. -->
+  <div class="sheet-backdrop" id="tearSheetBackdrop"></div>
+  <div class="sheet" id="tearSheet">
+    <div class="sheet-grab" id="tearSheetGrab"></div>
+    <div id="tearSheetBody"></div>
   </div>
 
   <!-- JOURNAL (replaces Forecast + Journal + Scanner + Scorecards — Stage B) -->
@@ -267,10 +268,6 @@
       with no forecast usually means yfinance has no usable price history for that
       ticker (delisted, too new, or a typo) — then click Analyze again once it
       finishes to pull the result in.
-    </div>
-    <div id="fc-result" style="display:none">
-      <div class="card" id="fc-card"></div>
-      <div class="card" id="fc-decision"></div>
     </div>
 
     <h2 style="margin-top:22px">Today's Setups</h2>
@@ -502,27 +499,257 @@ function renderHeatStrip(){
       <div class="hd">${esc(r.ticker)}</div>${fmt(r["3m"])} · 3m
     </div>`).join("") : `<div class="empty">No rotation data yet.</div>`;
   el.querySelectorAll(".hchip").forEach(chip => chip.onclick = () =>
-    openTileSheet(chip.dataset.ticker, chip.dataset.label));
+    openTearSheet(chip.dataset.ticker, chip.dataset.label));
 }
-function openTileSheet(ticker, label){
-  const row = (ROT?.rs_table||[]).find(r=>r.ticker===ticker);
-  document.getElementById("tileSheetBody").innerHTML = row ? `
-    <h2>${esc(ticker)} <span style="color:var(--dim);font-weight:400">${esc(label||'')}</span></h2>
-    <div class="sub">${gloss("relative strength","Relative strength")} vs SPY, as of ${esc(ROT.current.as_of)}</div>
+
+/* ==================================================================
+   ETF TearSheet (Stage F) — the single shared ticker component. Every
+   section independently checks its own data source and degrades to an
+   honest "not available" rather than inventing anything: heat-strip
+   tickers (sectors/size) live in rotation_digest, not research_digest,
+   so sparkline/indicators/verdict (research-only) simply don't render
+   for them, while the forecast block and relative strip still can.
+   ================================================================== */
+let RESEARCH = null, UNIVERSE_CFG = null;
+async function ensureResearchLoaded(){
+  if(RESEARCH) return RESEARCH;
+  try{
+    const r = await fetch("data/research_digest.json",{cache:"no-store"});
+    if(r.ok) RESEARCH = await r.json();
+  }catch{}
+  return RESEARCH;
+}
+async function ensureUniverseLoaded(){
+  if(UNIVERSE_CFG) return UNIVERSE_CFG;
+  try{
+    const r = await fetch("scripts/universe_config.json",{cache:"no-store"});
+    if(r.ok) UNIVERSE_CFG = await r.json();
+  }catch{}
+  return UNIVERSE_CFG;
+}
+
+function tearSheetHeaderHTML(ticker, label, research){
+  const rsRow = (ROT?.rs_table||[]).find(r=>r.ticker===ticker);
+  const snap = research?.assets?.[ticker]?.current;
+  const price = snap?.snapshots?.today?.price;
+  const asOf = snap?.as_of || ROT?.current?.as_of;
+  return `<h2 style="margin-top:2px">${esc(ticker)} <span style="color:var(--dim);font-weight:400">${esc(label||rsRow?.label||'')}</span></h2>
+    <div class="sub" style="margin-bottom:0">
+      ${price!=null ? `$${Number(price).toFixed(2)} · ` : ""}
+      ${asOf ? `as of ${esc(asOf)} (end-of-day close, not real-time)` : "no price on file"}
+    </div>`;
+}
+
+// 5-point trend (today/1m/3m/6m/1y) — the only granularity research_digest
+// actually stores. Honestly labeled rather than presented as a smooth daily
+// curve it isn't.
+function tearSheetSparklineHTML(ticker, research){
+  const snaps = research?.assets?.[ticker]?.current?.snapshots;
+  if(!snaps) return "";
+  const order = ["1y","6m","3m","1m","today"];
+  const pts = order.map(k=>({k, price: snaps[k]?.price})).filter(p=>p.price!=null);
+  if(pts.length < 2) return "";
+  const max = Math.max(...pts.map(p=>p.price)), min = Math.min(...pts.map(p=>p.price));
+  const range = (max - min) || 1;
+  const w = 280, h = 56, step = w/(pts.length-1);
+  const path = pts.map((p,i)=>`${i===0?'M':'L'}${(i*step).toFixed(1)},${(h-((p.price-min)/range)*h).toFixed(1)}`).join(" ");
+  return `<div class="klabel">Price — 5-point trend (today, 1m, 3m, 6m, 1y ago)</div>
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:${h}px" preserveAspectRatio="none">
+      <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="2"/>
+    </svg>
+    <div class="sub" style="display:flex;justify-content:space-between;margin-bottom:0">
+      ${pts.map(p=>`<span>${p.k==='today'?'now':p.k} $${p.price.toFixed(0)}</span>`).join("")}
+    </div>`;
+}
+
+// Cumulative return vs SPY (rotation universe tickers only, where a real
+// daily series exists) + vs the nearest sector-analog peer, if one is
+// configured. Never forces an analog that doesn't exist.
+async function tearSheetRelativeHTML(ticker){
+  const uni = await ensureUniverseLoaded();
+  const analog = uni?.analog_map?.[ticker];
+  const rsRow = (ROT?.rs_table||[]).find(r=>r.ticker===ticker);
+  const analogRow = analog ? (ROT?.rs_table||[]).find(r=>r.ticker===analog) : null;
+  if(!rsRow) return "";
+  let h = `<div class="klabel">${gloss("relative strength","Relative strength")} vs SPY</div>
     <div class="metricrow">
-      <div class="metric"><div class="v ${cls(row['1m'])}">${fmt(row['1m'])}</div><div class="l">1 month</div></div>
-      <div class="metric"><div class="v ${cls(row['3m'])}">${fmt(row['3m'])}</div><div class="l">3 months</div></div>
-      <div class="metric"><div class="v ${cls(row['6m'])}">${fmt(row['6m'])}</div><div class="l">6 months</div></div>
-      <div class="metric"><div class="v ${cls(row['1y'])}">${fmt(row['1y'])}</div><div class="l">1 year</div></div>
-    </div>` : `<div class="empty">No detail available for ${esc(ticker)}.</div>`;
-  document.getElementById("tileSheetBackdrop").classList.add("open");
-  document.getElementById("tileSheet").classList.add("open");
+      <div class="metric"><div class="v ${cls(rsRow['1m'])}">${fmt(rsRow['1m'])}</div><div class="l">1 month</div></div>
+      <div class="metric"><div class="v ${cls(rsRow['3m'])}">${fmt(rsRow['3m'])}</div><div class="l">3 months</div></div>
+      <div class="metric"><div class="v ${cls(rsRow['6m'])}">${fmt(rsRow['6m'])}</div><div class="l">6 months</div></div>
+      <div class="metric"><div class="v ${cls(rsRow['1y'])}">${fmt(rsRow['1y'])}</div><div class="l">1 year</div></div>
+    </div>`;
+  if(analog === null || analog === undefined){
+    h += `<div class="sub" style="margin-bottom:0">No sector analog configured for ${esc(ticker)}.</div>`;
+  } else if(analogRow){
+    h += `<div class="klabel">vs nearest analog (${esc(analog)})</div>
+      <div class="sub" style="margin-bottom:0">${esc(analog)} 3-month RS: ${fmt(analogRow['3m'])}
+        (${esc(ticker)} minus ${esc(analog)}: ${fmt(rsRow['3m']-analogRow['3m'])} pp)</div>`;
+  } else {
+    h += `<div class="sub" style="margin-bottom:0">Analog ${esc(analog)} configured but not in the current rotation universe.</div>`;
+  }
+  return h;
 }
-function closeTileSheet(){
-  document.getElementById("tileSheetBackdrop").classList.remove("open");
-  document.getElementById("tileSheet").classList.remove("open");
+
+// Indicator row: RSI, extension vs 200dma, distance from 20d high — all
+// straight from research_digest.current.snapshots.today, color-coded per
+// the directive's exact thresholds.
+function tearSheetIndicatorsHTML(ticker, research){
+  const snap = research?.assets?.[ticker]?.current?.snapshots?.today;
+  if(!snap) return "";
+  const rsiChip = snap.rsi14 >= 70 ? "chip-warn" : snap.rsi14 <= 30 ? "chip-info" : "";
+  const extChip = snap.ext200_pct >= 30 ? "chip-warn" : "";
+  const ddChip = snap.from_hi20_pct <= -10 ? "chip-info" : "";
+  return `<div class="klabel">Indicators</div>
+    <div class="metricrow">
+      <div class="metric"><span class="chip ${rsiChip}">${gloss("RSI")} ${snap.rsi14?.toFixed(1) ?? '–'}</span></div>
+      <div class="metric"><span class="chip ${extChip}">${gloss("extension","Ext. vs 200dma")} ${fmt(snap.ext200_pct)}</span></div>
+      <div class="metric"><span class="chip ${ddChip}">From 20d high ${fmt(snap.from_hi20_pct)}</span></div>
+    </div>`;
 }
-document.getElementById("tileSheetBackdrop").onclick = closeTileSheet;
+
+// One computed verdict line from the asset's top-confidence, regime-matched,
+// uptrend-sampled claim. Confidence must clear 40 or this says so plainly.
+function tearSheetVerdictHTML(ticker, research){
+  const asset = research?.assets?.[ticker];
+  if(!asset) return "";
+  const regimes = asset.current?.regimes || {};
+  const candidates = [];
+  for(const [studyKey, study] of Object.entries(asset.studies||{})){
+    if(!studyKey.endsWith("|uptrend")) continue;
+    const trigger = studyKey.split("|")[0];
+    for(const claim of study.claims||[]){
+      const matched = (claim.conditions||[]).every(c=>{
+        const [k,v] = c.split("=");
+        return regimes[k] === v;
+      });
+      candidates.push({...claim, trigger, matched});
+    }
+  }
+  const eligible = candidates.filter(c=>c.confidence>40);
+  eligible.sort((a,b)=> (b.matched-a.matched) || (b.confidence-a.confidence));
+  const best = eligible[0];
+  if(!best){
+    return `<div class="klabel">Verdict</div>
+      <p style="font-size:14px">Thin evidence — no reliable historical pattern for this setup.</p>`;
+  }
+  const triggerLabel = research?.meta?.triggers?.[best.trigger]?.label || best.trigger;
+  return `<div class="klabel">Verdict</div>
+    <p style="font-size:14px">${esc(ticker)} triggered "${esc(triggerLabel)}" under ${esc((best.conditions||[]).join(", "))} —
+      in ${best.n} similar historical episodes, the median 6-month forward return was ${fmt(best.median_fwd_126d_pct)},
+      with a worst interim drawdown of ${fmt(best.worst_interim_dd_pct)}
+      (confidence ${best.confidence}/100${best.matched?"":", regime not currently matched"}).</p>`;
+}
+
+// Forecast block: reads whatever is already stored via mm-journal — free,
+// no workflow cost. NEVER auto-runs the engine; "Refresh forecast" is an
+// explicit user action. Non-fullDetail entry points (heat strip, scanner,
+// chat) get just the compact horizon chips + one-tap decision capture below.
+// fullDetail (Journal's Analyze entry point) instead reuses the SAME
+// fcRenderCard/fcRenderDecisionForm logic Journal has always used for the
+// recommendation card and the full multi-field decision form -- retargeted
+// to render into #tearSheetForecast/#tearSheetDecision placeholders here
+// instead of the old standalone #fc-card/#fc-decision, so this is one
+// component with two entry points, not a second parallel implementation.
+// openTearSheet calls fcRenderCard()/fcRenderDecisionForm() right after this
+// returns, using the fcHorizons/fcSelectedHorizon state the caller set.
+async function tearSheetForecastHTML(ticker, fullDetail){
+  if(fullDetail){
+    return `<div id="tearSheetForecast"></div><div id="tearSheetDecision" style="margin-top:14px"></div>`;
+  }
+  let rows = [];
+  let fetchErr = null;
+  try{
+    const r = await mmCall("get_latest_forecast", {ticker});
+    rows = r.forecasts || [];
+  }catch(e){ fetchErr = e.message; }
+  let h = `<div class="klabel">Forecast</div>`;
+  if(!rows.length){
+    h += fetchErr ? `<div class="empty">${esc(fetchErr)}</div>`
+      : `<div class="empty">No forecast on file for ${esc(ticker)} yet.</div>
+      <button class="ghost ts-refresh" data-ticker="${esc(ticker)}">Refresh forecast</button>`;
+    return h;
+  }
+  h += `<div class="sub">As of ${esc(new Date(rows[0].as_of_ts).toLocaleString())}</div>`;
+  h += `<div class="hlist">`+rows.map(r=>`
+    <div class="hchip">
+      <div class="hd">${r.horizon_days}d</div>${pct0(r.p_positive)} pos · ${pct(r.q50)} median · ${esc(r.confidence_label||'–')}
+    </div>`).join("")+`</div>`;
+  h += `<button class="ghost ts-refresh" data-ticker="${esc(ticker)}">Refresh forecast</button>`;
+  const row = rows.find(r=>r.horizon_days===5) || rows[0];
+  h += decisionCaptureHTML(ticker, row.id, row.evidence_json?.recommendation_label);
+  return h;
+}
+
+async function openTearSheet(ticker, label, opts){
+  opts = opts || {};
+  const backdrop = document.getElementById("tearSheetBackdrop");
+  const sheet = document.getElementById("tearSheet");
+  const body = document.getElementById("tearSheetBody");
+  body.innerHTML = `<div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div>`;
+  backdrop.classList.add("open");
+  sheet.classList.add("open");
+  sheet.style.transform = "";
+
+  const research = await ensureResearchLoaded();
+  const [relativeHTML, forecastHTML] = await Promise.all([
+    tearSheetRelativeHTML(ticker),
+    tearSheetForecastHTML(ticker, opts.fullDetail),
+  ]);
+  body.innerHTML = [
+    tearSheetHeaderHTML(ticker, label, research),
+    tearSheetSparklineHTML(ticker, research),
+    relativeHTML,
+    tearSheetIndicatorsHTML(ticker, research),
+    tearSheetVerdictHTML(ticker, research),
+    forecastHTML,
+  ].filter(Boolean).join("");
+
+  // fullDetail: fcHorizons/fcSelectedHorizon were already set by fcRender()
+  // before this was called — fcRenderCard/fcRenderDecisionForm render into
+  // the #tearSheetForecast/#tearSheetDecision placeholders just inserted.
+  if(opts.fullDetail){
+    fcRenderCard();
+    fcRenderDecisionForm();
+  }
+
+  body.querySelectorAll(".ts-refresh").forEach(btn => btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = "Refreshing…";
+    try{
+      await mmCall("trigger_forecast", {ticker: btn.dataset.ticker});
+      btn.textContent = "Triggered — check back in ~1 min";
+    }catch(e){
+      btn.textContent = "Refresh forecast";
+      btn.disabled = false;
+      alert(e.message);
+    }
+  });
+  wireDecisionCapture(body);
+}
+function closeTearSheet(){
+  document.getElementById("tearSheetBackdrop").classList.remove("open");
+  document.getElementById("tearSheet").classList.remove("open");
+  document.getElementById("tearSheet").style.transform = "";
+}
+document.getElementById("tearSheetBackdrop").onclick = closeTearSheet;
+
+// Swipe-down to dismiss (mobile) via the grab handle.
+(function(){
+  const sheet = document.getElementById("tearSheet");
+  const grab = document.getElementById("tearSheetGrab");
+  let startY = null;
+  grab.addEventListener("touchstart", e=>{ startY = e.touches[0].clientY; }, {passive:true});
+  grab.addEventListener("touchmove", e=>{
+    if(startY==null) return;
+    const dy = Math.max(0, e.touches[0].clientY - startY);
+    sheet.style.transform = `translateY(${dy}px)`;
+  }, {passive:true});
+  grab.addEventListener("touchend", e=>{
+    if(startY==null) return;
+    const dy = e.changedTouches[0].clientY - startY;
+    startY = null;
+    if(dy > 80) closeTearSheet(); else sheet.style.transform = "";
+  });
+})();
 
 // Macro pulse: one collapsed line (VIX / 10Y / HY spread / leadership run
 // age), full table + explainers behind the <details> tap.
@@ -697,10 +924,14 @@ async function send(){
     if(!r.ok||d.error) throw new Error(d.error==="bad passphrase"
       ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
       : (d.error||"Request failed") + (d.detail ? ": "+String(d.detail).slice(0,200) : ""));
+    const tsLink = focus ? `<button class="ghost ts-open" data-ticker="${esc(focus)}"
+      style="width:auto;padding:7px 14px;margin-top:8px">View ${esc(focus)} tear sheet →</button>` : "";
     document.getElementById("think").outerHTML =
-      `<div class="msg ai"><div class="bubble">${aiCard(d)}${focus ? decisionCaptureHTML(focus) : ""}</div></div>`;
+      `<div class="msg ai"><div class="bubble">${aiCard(d)}${tsLink}${focus ? decisionCaptureHTML(focus) : ""}</div></div>`;
     if(focus){
       wireDecisionCapture(thread);
+      thread.querySelectorAll(".ts-open").forEach(btn => btn.onclick = () =>
+        openTearSheet(btn.dataset.ticker));
       // Stage D1: every ranked call surfaced in chat gets graded like any
       // other forecast — fire-and-forget, never blocks the chat response.
       mmCall("trigger_forecast", {ticker: focus, source: "chat"}).catch(()=>{});
@@ -831,7 +1062,6 @@ async function fcAnalyze(){
   const err = document.getElementById("fc-err");
   err.classList.remove("show");
   const btn = document.getElementById("fc-go");
-  document.getElementById("fc-result").style.display = "none";
   document.getElementById("fc-timeout").style.display = "none";
   if(!ticker){ err.textContent = "Enter a ticker."; err.classList.add("show"); return; }
   if(!TICKER_RE.test(ticker)){
@@ -870,7 +1100,6 @@ document.getElementById("fc-go").onclick = fcAnalyze;
 async function fcLoadAndRender(ticker){
   const err = document.getElementById("fc-err");
   err.classList.remove("show");
-  document.getElementById("fc-result").style.display = "none";
   document.getElementById("fc-timeout").style.display = "none";
   document.getElementById("fc-ticker").value = ticker;
   try{
@@ -882,12 +1111,14 @@ async function fcLoadAndRender(ticker){
   }
 }
 
+// Renders through the shared TearSheet (Stage F3) -- fcHorizons/
+// fcSelectedHorizon are set here, then openTearSheet's fullDetail path
+// calls fcRenderCard()/fcRenderDecisionForm() once the sheet's placeholder
+// containers exist.
 function fcRender(rows){
   fcHorizons = rows;
   fcSelectedHorizon = rows.find(r=>r.horizon_days===5) ? 5 : rows[0].horizon_days;
-  document.getElementById("fc-result").style.display = "block";
-  fcRenderCard();
-  fcRenderDecisionForm();
+  openTearSheet(rows[0].ticker, null, {fullDetail:true});
 }
 
 function fcRenderCard(){
@@ -931,8 +1162,9 @@ function fcRenderCard(){
     ev.invalidation_risks.map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
   if(ev.warnings?.length) h += `<div class="klabel">Warnings</div><ul class="bl">`+
     ev.warnings.map(d=>`<li>${esc(d)}</li>`).join("")+`</ul>`;
-  document.getElementById("fc-card").innerHTML = h;
-  document.querySelectorAll(".hchip").forEach(chip => chip.onclick = () => {
+  const target = document.getElementById("tearSheetForecast");
+  target.innerHTML = h;
+  target.querySelectorAll(".hchip").forEach(chip => chip.onclick = () => {
     fcSelectedHorizon = Number(chip.dataset.h);
     fcRenderCard();
     fcRenderDecisionForm();
@@ -941,7 +1173,7 @@ function fcRenderCard(){
 
 function fcRenderDecisionForm(){
   const row = fcHorizons.find(r=>r.horizon_days===fcSelectedHorizon);
-  document.getElementById("fc-decision").innerHTML = `
+  document.getElementById("tearSheetDecision").innerHTML = `
     <h2>Log a decision</h2>
     <div class="sub">Acting on the ${row.horizon_days}-day forecast above.</div>
     <label class="fl">Action</label>
@@ -1046,7 +1278,6 @@ async function loadScanner(){
       </div>`).join("");
     listEl.querySelectorAll(".sc-view").forEach(btn => btn.onclick = () => {
       fcLoadAndRender(btn.dataset.ticker);
-      document.getElementById("fc-result").scrollIntoView({behavior:"smooth", block:"start"});
     });
     wireDecisionCapture(listEl);
   }catch(e){

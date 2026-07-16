@@ -221,6 +221,10 @@
       </div>
     </div>
     <div class="errline" id="chat-err"></div>
+    <div class="seg" id="scopeToggle">
+      <button class="on" data-scope="markets">Markets</button>
+      <button data-scope="myrecord">My Record</button>
+    </div>
     <div class="composer">
       <input id="focus" class="ticker-focus" list="ticker-suggest"
         placeholder="All assets" autocomplete="off" spellcheck="false">
@@ -336,27 +340,7 @@
     </div>
   </div>
 
-  <!-- ASK (folded into Desk's scope-toggle composer in Stage E; left wired
-       but unreachable via nav in the meantime so nothing below throws) -->
-  <div style="display:none">
-  <div class="view" id="view-ask">
-    <h1>Ask</h1>
-    <div class="sub">Grounded Q&amp;A over your forecast and decision history — every number traces to a query result below.</div>
-    <div class="card">
-      <div style="display:flex;gap:8px">
-        <input class="formfield" id="ask-q" style="margin-bottom:0"
-          placeholder="e.g. What did the model say about SMH last month?">
-        <button class="go" id="ask-go" style="width:auto;padding:0 20px">Ask</button>
-      </div>
-      <div class="errbox" id="ask-err"></div>
-    </div>
-    <div class="spin" id="ask-spin">Thinking…</div>
-    <div id="ask-result" style="display:none">
-      <div class="card" id="ask-answer"></div>
-      <div class="card"><h2>Evidence</h2><div id="ask-evidence"></div></div>
-    </div>
-  </div>
-  </div>
+
 </main>
 
 <nav class="bottom-nav" id="bottomNav">
@@ -371,7 +355,7 @@
 const FN_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/smooth-service";
 const fmt = v => (v==null)?"–":(v>0?"+":"")+Number(v).toFixed(1)+"%";
 const cls = v => (v==null)?"":(v>=0?"pos":"neg");
-let ROT=null;
+let ROT=null, SCANNER=null;
 
 /* passphrase: two inputs (desktop sidebar #pass, mobile topbar #pass-m) kept
    in sync via localStorage since the sidebar itself is hidden on mobile. */
@@ -446,6 +430,10 @@ async function refreshActiveDigests(){
     const r = await fetch("data/rotation_digest.json",{cache:"no-store"});
     if(r.ok){ ROT = await r.json(); renderRotation(); }
   }catch{}
+  try{
+    const r = await fetch("data/scanner_digest.json",{cache:"no-store"});
+    if(r.ok){ SCANNER = await r.json(); renderNarrativeHeader(); }
+  }catch{}
   const onId = document.querySelector(".view.on")?.id;
   if(onId === "view-journal"){ scannerLoaded = false; loadScanner(); loadJournal(); loadScorecards(); }
   if(onId === "view-studies"){ studiesLoaded = false; loadCompletedStudies(); }
@@ -484,6 +472,12 @@ document.getElementById("fc-ticker").addEventListener("input", e=>normalizeTicke
     const r = await fetch("data/research_digest.json",{cache:"no-store"});
     if(r.ok){ const d = await r.json();
       addTickerSuggestions(Object.entries(d.assets).map(([t,a])=>({ticker:t,label:a.label}))); }
+  }catch{}
+  // Scanner digest is fetched here too (not just on Journal open) purely so
+  // the narrative header's setup-count clause has a number on first paint.
+  try{
+    const r = await fetch("data/scanner_digest.json",{cache:"no-store"});
+    if(r.ok){ SCANNER = await r.json(); renderNarrativeHeader(); }
   }catch{}
 })();
 
@@ -563,11 +557,42 @@ function renderMacroPulse(){
       `${hr.current.state_label} (${Math.round(hr.current.probabilities[hr.current.state_label]*100)}% prob.)`;
   }
 }
-// Interim single-line header; Stage E replaces this with the full 2-3
-// sentence template (regime + leadership + setup-count clauses).
+// Narrative header (Stage E3): 2-3 plain-English sentences built ONLY from
+// named digest fields, zero LLM calls, re-run whenever a digest updates
+// (initial load + pull-to-refresh). Each clause is commented with its
+// source field, per the directive.
 function renderNarrativeHeader(){
+  if(!ROT?.current) return;
+  const sentences = [];
+
+  // Regime clause <- rotation_digest.current.regimes.vix
+  const vix = ROT.current.regimes?.vix;
+  if(vix) sentences.push(`Markets are ${esc(vix)} today.`);
+
+  // Leadership clause <- rotation_digest.current.leadership
+  //                    + rotation_digest.run_durations.current.age_weeks
+  //                    + rotation_digest.run_durations.by_label[label].median_weeks
+  const lead = ROT.current.leadership;
+  const rd = ROT.run_durations;
+  if(lead && rd?.current){
+    const medianWeeks = rd.by_label?.[lead]?.median_weeks;
+    sentences.push(
+      `${esc(lead)} has led for ${rd.current.age_weeks} week${rd.current.age_weeks===1?'':'s'}`+
+      (medianWeeks!=null ? ` — historically these runs lasted ${medianWeeks} weeks at most.` : `.`)
+    );
+  }
+
+  // Setup clause <- scanner_digest.setups.length
+  if(SCANNER){
+    const n = SCANNER.setups?.length || 0;
+    sentences.push(n > 0
+      ? `The scanner sees ${n} ranked setup${n===1?'':'s'} today.`
+      : `No high-confidence setup today.`);
+  }
+
   document.getElementById("desk-asof").innerHTML =
-    `As of ${esc(ROT.current.as_of)} · ${gloss("leadership")}: ${esc(ROT.current.leadership)}`;
+    (sentences.length ? sentences.join(" ") : "Loading market snapshot…") +
+    `<br><span style="font-size:11px">As of ${esc(ROT.current.as_of)}</span>`;
 }
 function renderRotation(){
   renderNarrativeHeader();
@@ -602,6 +627,25 @@ function aiCard(d){
   return h;
 }
 
+// Scope toggle (Stage E2): the toggle is the only router — no auto-routing
+// on question content. Markets -> smooth-service (unchanged). My Record ->
+// mm-search over the user's own forecast/decision history.
+let CHAT_SCOPE = localStorage.getItem("mm_chat_scope") || "markets";
+function applyScopeUI(){
+  document.querySelectorAll("#scopeToggle button").forEach(b=>
+    b.classList.toggle("on", b.dataset.scope===CHAT_SCOPE));
+  document.getElementById("q").placeholder = CHAT_SCOPE==="myrecord"
+    ? "e.g. What did the model say about SMH last month?"
+    : "Ask about the current setup…";
+  document.getElementById("focus").style.display = CHAT_SCOPE==="myrecord" ? "none" : "";
+}
+document.querySelectorAll("#scopeToggle button").forEach(b => b.onclick = () => {
+  CHAT_SCOPE = b.dataset.scope;
+  localStorage.setItem("mm_chat_scope", CHAT_SCOPE);
+  applyScopeUI();
+});
+applyScopeUI();
+
 async function send(){
   const q = document.getElementById("q").value.trim();
   const focusEl = document.getElementById("focus");
@@ -612,18 +656,39 @@ async function send(){
   err.textContent = "";
   if(!q) return;
   if(!pass){ err.textContent="Set the app passphrase first (top bar on mobile, sidebar on desktop)."; return; }
-  if(focus && !TICKER_RE.test(focus)){
+  if(CHAT_SCOPE==="markets" && focus && !TICKER_RE.test(focus)){
     err.textContent = "Focus ticker doesn't look valid — letters only, 1-6 characters (e.g. SMH, BRK.B), or leave it blank for all assets.";
     return;
   }
   document.getElementById("greeting")?.remove();
   thread.insertAdjacentHTML("beforeend",
     `<div class="msg user"><div class="bubble">${esc(q)}</div></div>
-     <div class="thinking" id="think">Reading the evidence…</div>`);
+     <div class="thinking" id="think">${CHAT_SCOPE==="myrecord" ? "Checking your record…" : "Reading the evidence…"}</div>`);
   document.getElementById("desk-scroll").scrollTop = document.getElementById("desk-scroll").scrollHeight;
   document.getElementById("q").value = "";
   document.getElementById("send").disabled = true;
   try{
+    if(CHAT_SCOPE === "myrecord"){
+      const [fRes, dRes] = await Promise.all([
+        mmCall("query_forecasts", {limit:1}).catch(()=>({forecasts:[]})),
+        mmCall("query_decisions", {limit:1}).catch(()=>({decisions:[]})),
+      ]);
+      if(!fRes.forecasts?.length && !dRes.decisions?.length){
+        document.getElementById("think").outerHTML =
+          `<div class="msg ai"><div class="bubble">No decisions logged yet — ask a Markets question first.</div></div>`;
+        return;
+      }
+      const r = await fetch(MM_SEARCH_URL, {method:"POST",
+        headers:{"Content-Type":"application/json","x-app-key":pass},
+        body: JSON.stringify({question:q})});
+      const d = await r.json();
+      if(!r.ok || d.error) throw new Error(d.error === "bad passphrase"
+        ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
+        : (d.error||"Request failed") + (d.detail?": "+String(d.detail).slice(0,200):""));
+      document.getElementById("think").outerHTML =
+        `<div class="msg ai"><div class="bubble">${myRecordCard(d)}</div></div>`;
+      return;
+    }
     const r = await fetch(FN_URL,{method:"POST",
       headers:{"Content-Type":"application/json","x-app-key":pass},
       body:JSON.stringify({focus:focus||null,
@@ -1292,45 +1357,18 @@ document.getElementById("reg-submit").onclick = async () => {
   }
 };
 
-/* ---------- ask ---------- */
-async function askQuestion(){
-  const q = document.getElementById("ask-q").value.trim();
-  const err = document.getElementById("ask-err");
-  err.classList.remove("show");
-  document.getElementById("ask-result").style.display = "none";
-  if(!q){ err.textContent = "Type a question first."; err.classList.add("show"); return; }
-  const pass = getPassphrase();
-  if(!pass){ err.textContent = "Set the app passphrase first (top bar on mobile, sidebar on desktop)."; err.classList.add("show"); return; }
-  const btn = document.getElementById("ask-go");
-  btn.disabled = true;
-  document.getElementById("ask-spin").classList.add("show");
-  try{
-    const r = await fetch(MM_SEARCH_URL, {method:"POST",
-      headers:{"Content-Type":"application/json","x-app-key":pass},
-      body: JSON.stringify({question:q})});
-    const d = await r.json();
-    if(!r.ok || d.error) throw new Error(d.error === "bad passphrase"
-      ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
-      : (d.error||"Request failed") + (d.detail?": "+String(d.detail).slice(0,200):""));
-    document.getElementById("ask-answer").innerHTML =
-      `<div style="white-space:pre-wrap">${esc(d.answer||"(no answer)")}</div>`;
-    const ev = d.evidence||[];
-    document.getElementById("ask-evidence").innerHTML = ev.length ?
-      ev.map(e=>`<div class="evidence-item"><div class="tool">${esc(e.tool)}</div>
-        <div class="sub" style="margin-bottom:0">args: ${esc(JSON.stringify(e.args))}</div>
-        <pre>${esc(JSON.stringify(e.result_summary, null, 2))}</pre></div>`).join("")
-      : `<div class="empty">No tool calls were needed to answer this.</div>`;
-    document.getElementById("ask-result").style.display = "block";
-  }catch(e){
-    err.textContent = e.message; err.classList.add("show");
-  }finally{
-    btn.disabled = false;
-    document.getElementById("ask-spin").classList.remove("show");
-  }
-}
+/* ---------- my record (mm-search) — rendered inline in the chat thread,
+   same bubble pattern as Markets, when the scope toggle is on My Record */
 const MM_SEARCH_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/mm-search";
-document.getElementById("ask-go").onclick = askQuestion;
-document.getElementById("ask-q").addEventListener("keydown", e=>{ if(e.key==="Enter") askQuestion(); });
+function myRecordCard(d){
+  let h = `<div style="white-space:pre-wrap">${esc(d.answer||"(no answer)")}</div>`;
+  const ev = d.evidence||[];
+  if(ev.length) h += `<div class="klabel">Evidence</div>`+
+    ev.map(e=>`<div class="evidence-item"><div class="tool">${esc(e.tool)}</div>
+      <div class="sub" style="margin-bottom:0">args: ${esc(JSON.stringify(e.args))}</div>
+      <pre>${esc(JSON.stringify(e.result_summary, null, 2))}</pre></div>`).join("");
+  return h;
+}
 
 /* ---------- studies (archive) ---------- */
 let studiesLoaded = false;

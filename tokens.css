@@ -172,6 +172,13 @@ nav button, .bottom-nav button, .sidefoot input, .composer button,
   body{ padding-bottom:var(--bottom-nav-h); }
 }
 
+/* -------- segmented control (scope toggle, window pickers, etc.) -------- */
+.seg{display:flex;background:var(--chip);border-radius:12px;padding:3px;gap:2px;
+  width:max-content;margin-bottom:12px}
+.seg button{border:0;background:transparent;font:600 13px -apple-system,sans-serif;
+  color:var(--dim);padding:6px 14px;border-radius:9px;cursor:pointer;min-height:var(--tap-min)}
+.seg button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+
 /* -------- one-tap decision capture (Stage D) --------
    Zero-friction "Did you act on this?" row under any verdict. Dismissible,
    never blocks the surrounding content. */

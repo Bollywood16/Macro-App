@@ -38,6 +38,7 @@ const GLOSSARY = {
   "expected max adverse": "The typical worst dip below entry this setup has seen before it worked out, in historical analogs.",
   "leadership": "Which group of sectors (cyclical, defensive, small-cap, etc.) has outperformed SPY by the widest margin recently.",
   "purged cross-validation": "A model-testing method that removes training samples whose outcome window overlaps the test period, so the model can't accidentally peek at the answer.",
+  "from 20-day high": "How far the current price sits below its highest close of the last month. 0% = at the highs; a large negative number = a pullback in progress.",
   "log loss": "A stricter scoring rule than Brier score — it punishes confident-but-wrong predictions especially hard. Lower is better.",
   "interval coverage": "How often the actual result landed inside the model's predicted 20th-80th percentile range. Should be close to 60% if the model is well-calibrated.",
   "rates": "The Treasury-yield regime (rising/falling/flat) used as one of the conditioning dimensions for historical comparisons.",

@@ -1,86 +1,20 @@
 {
-  "generated_utc": "2026-07-16 07:31 UTC",
+  "generated_utc": "2026-07-17 06:41 UTC",
   "source": "top setups from data/scanner_digest.json, opportunity_score-ranked",
-  "scanner_digest_generated_utc": "2026-07-16 07:12 UTC",
+  "scanner_digest_generated_utc": "2026-07-17 06:35 UTC",
   "interval": "15m",
   "top_n": 5,
   "scanned_tickers": [
-    "XLF",
-    "XLY",
+    "XLB",
     "^SOX",
-    "XLE"
+    "XLF",
+    "XLY"
   ],
   "results": [
     {
-      "ticker": "XLF",
+      "ticker": "XLB",
       "interval": "15m",
-      "generated_utc": "2026-07-16 07:31 UTC",
-      "verdict": "NO-GO",
-      "gates": {
-        "close_above_vwap": false,
-        "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
-      },
-      "facts": {
-        "bar_ts": "2026-07-15T15:45:00-04:00",
-        "close": 56.545,
-        "session_vwap": 56.5855,
-        "bar_volume": 6698312,
-        "prior_bar_volume": 1475969,
-        "relative_volume_vs_trailing_avg": 4.605,
-        "macd_histogram": -0.02143,
-        "rsi14": 52.53
-      },
-      "warnings": []
-    },
-    {
-      "ticker": "XLY",
-      "interval": "15m",
-      "generated_utc": "2026-07-16 07:31 UTC",
-      "verdict": "NO-GO",
-      "gates": {
-        "close_above_vwap": false,
-        "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
-      },
-      "facts": {
-        "bar_ts": "2026-07-15T15:45:00-04:00",
-        "close": 116.97,
-        "session_vwap": 117.1604,
-        "bar_volume": 1701798,
-        "prior_bar_volume": 355373,
-        "relative_volume_vs_trailing_avg": 7.773,
-        "macd_histogram": -0.10261,
-        "rsi14": 48.43
-      },
-      "warnings": []
-    },
-    {
-      "ticker": "^SOX",
-      "interval": "15m",
-      "generated_utc": "2026-07-16 07:31 UTC",
-      "verdict": "NO-GO",
-      "gates": {
-        "close_above_vwap": false,
-        "volume_ge_prior_bar": true,
-        "macd_histogram_positive": true
-      },
-      "facts": {
-        "bar_ts": "2026-07-15T15:45:00-04:00",
-        "close": 12396.0527,
-        "session_vwap": NaN,
-        "bar_volume": 0,
-        "prior_bar_volume": 0,
-        "relative_volume_vs_trailing_avg": null,
-        "macd_histogram": 30.63912,
-        "rsi14": 53.09
-      },
-      "warnings": []
-    },
-    {
-      "ticker": "XLE",
-      "interval": "15m",
-      "generated_utc": "2026-07-16 07:31 UTC",
+      "generated_utc": "2026-07-17 06:41 UTC",
       "verdict": "GO",
       "gates": {
         "close_above_vwap": true,
@@ -88,14 +22,80 @@
         "macd_histogram_positive": true
       },
       "facts": {
-        "bar_ts": "2026-07-15T15:45:00-04:00",
-        "close": 56.48,
-        "session_vwap": 56.2692,
-        "bar_volume": 4010433,
-        "prior_bar_volume": 1852881,
-        "relative_volume_vs_trailing_avg": 3.936,
-        "macd_histogram": 0.05992,
-        "rsi14": 58.69
+        "bar_ts": "2026-07-16T15:45:00-04:00",
+        "close": 50.87,
+        "session_vwap": 50.7328,
+        "bar_volume": 1136760,
+        "prior_bar_volume": 369226,
+        "relative_volume_vs_trailing_avg": 5.877,
+        "macd_histogram": 0.0119,
+        "rsi14": 63.01
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "^SOX",
+      "interval": "15m",
+      "generated_utc": "2026-07-17 06:41 UTC",
+      "verdict": "NO-GO",
+      "gates": {
+        "close_above_vwap": false,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": true
+      },
+      "facts": {
+        "bar_ts": "2026-07-16T15:45:00-04:00",
+        "close": 11873.4805,
+        "session_vwap": NaN,
+        "bar_volume": 0,
+        "prior_bar_volume": 0,
+        "relative_volume_vs_trailing_avg": null,
+        "macd_histogram": 16.58288,
+        "rsi14": 43.31
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLF",
+      "interval": "15m",
+      "generated_utc": "2026-07-17 06:41 UTC",
+      "verdict": "GO",
+      "gates": {
+        "close_above_vwap": true,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": true
+      },
+      "facts": {
+        "bar_ts": "2026-07-16T15:45:00-04:00",
+        "close": 56.75,
+        "session_vwap": 56.6259,
+        "bar_volume": 3759624,
+        "prior_bar_volume": 907638,
+        "relative_volume_vs_trailing_avg": 5.559,
+        "macd_histogram": 0.00227,
+        "rsi14": 61.24
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLY",
+      "interval": "15m",
+      "generated_utc": "2026-07-17 06:41 UTC",
+      "verdict": "NO-GO",
+      "gates": {
+        "close_above_vwap": false,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": false
+      },
+      "facts": {
+        "bar_ts": "2026-07-16T15:45:00-04:00",
+        "close": 117.34,
+        "session_vwap": 117.482,
+        "bar_volume": 913582,
+        "prior_bar_volume": 195028,
+        "relative_volume_vs_trailing_avg": 6.974,
+        "macd_histogram": -0.04955,
+        "rsi14": 48.55
       },
       "warnings": []
     }

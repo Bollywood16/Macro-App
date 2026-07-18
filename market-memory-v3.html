@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Market Memory · v3</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;450;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  :root{
+    --paper:#fbfbf9; --surface:#ffffff; --raised:#f4f5f3;
+    --line:#e7e8e4; --line-2:#eeefec;
+    --ink:#1c2128; --muted:#5c6470; --faint:#949aa4;
+    --indigo:#4338ca; --indigo-soft:#ecebfb; --indigo-line:#c9c5f2;
+    --accent:#2b6d78; --accent-soft:#e6f0f1;
+    --buy:#3f8f5b; --buy-bg:#edf6f0;
+    --wait:#b0812f; --wait-bg:#faf3e4;
+    --avoid:#c0574f; --avoid-bg:#fbeceb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#e9eae6; color:var(--ink); font-family:'Inter',system-ui,sans-serif;
+    display:flex; align-items:center; justify-content:center; padding:20px; gap:30px; flex-wrap:wrap; -webkit-font-smoothing:antialiased}
+  .phone{width:390px; height:844px; background:var(--paper); border-radius:44px; overflow:hidden; position:relative;
+    box-shadow:0 30px 80px rgba(40,45,55,.28), 0 0 0 11px #fff, 0 0 0 13px #d7d9d3; display:flex; flex-direction:column}
+  .label{position:absolute; top:-26px; left:50%; transform:translateX(-50%); font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8a9088; letter-spacing:.08em; white-space:nowrap}
+  .status{height:52px; flex:0 0 auto; display:flex; align-items:flex-end; justify-content:space-between; padding:0 28px 6px; font-size:14px; font-weight:600; cursor:pointer}
+  .status .dots{font-family:'IBM Plex Mono',monospace; letter-spacing:2px; font-size:12px; color:var(--muted)}
+  .status .tap-tip{position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--indigo); opacity:0; transition:.2s}
+  .status.flash .tap-tip{opacity:1}
+  .screen{flex:1; display:flex; flex-direction:column; min-height:0; position:relative}
+
+  .sheet-top{flex:0 0 auto; margin:10px 12px 0; padding:12px 16px; display:flex; align-items:center; justify-content:space-between;
+    background:var(--surface); border:1.5px solid var(--indigo); border-radius:16px; box-shadow:0 2px 0 var(--indigo-line)}
+  .sheet-top .close{background:none; border:none; color:var(--indigo); font-size:24px; cursor:pointer}
+  .sheet-top .mid{text-align:center}
+  .sheet-top .tick{font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:500}
+  .sheet-top .sub{font-size:10px; color:var(--faint)}
+  .sheet-top .price{font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--avoid); font-weight:500}
+
+  /* AS OF banner */
+  .asof{margin:8px 14px 0; display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--muted)}
+  .asof .live{width:6px; height:6px; border-radius:50%; background:var(--buy); box-shadow:0 0 7px var(--buy)}
+  .asof b{color:var(--ink); font-weight:500}
+  .asof .delay{margin-left:auto; color:var(--faint)}
+
+  .ptabs{flex:0 0 auto; display:flex; gap:6px; padding:10px 14px 4px}
+  .ptab{flex:1; text-align:center; padding:9px; font-size:12.5px; font-weight:500; color:var(--muted); background:var(--surface); border:1px solid var(--line); border-radius:11px; cursor:pointer}
+  .ptab.active{color:#fff; background:var(--indigo); border-color:var(--indigo)}
+  .pages{flex:1; min-height:0; position:relative}
+  .page{position:absolute; inset:0; overflow-y:auto; padding-bottom:30px}
+  .page::-webkit-scrollbar{display:none}
+  .page.hide{display:none}
+
+  .verdict{margin:12px 14px 0; padding:20px; background:var(--wait-bg); border:1px solid #f0e4c6; border-radius:16px}
+  .verdict .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--wait); margin-bottom:9px}
+  .verdict .pill{font-family:'Fraunces',serif; font-weight:600; font-size:32px; color:var(--wait); line-height:1}
+  .verdict .takeaway{margin-top:11px; font-size:14px; line-height:1.5}
+  .conf{margin-top:16px}
+  .conf .row{display:flex; justify-content:space-between; margin-bottom:6px}
+  .conf .row span{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted)}
+  .conf .row b{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--wait)}
+  .meter{height:6px; background:#eaddc4; border-radius:3px; overflow:hidden}
+  .meter .fill{height:100%; width:44%; background:var(--wait)}
+
+  .section{padding:18px 20px; border-bottom:1px solid var(--line)}
+  .section h3{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:12px; display:flex; align-items:center; gap:8px}
+  .section h3 .per{margin-left:auto; text-transform:none; letter-spacing:0; color:var(--muted); font-size:10px}
+  .regime-read p{font-size:14px; line-height:1.55}
+
+  /* scrubbable price chart */
+  .live-vals{display:flex; gap:0; margin-bottom:2px}
+  .lv{flex:1; padding:8px 4px; text-align:center; border-right:1px solid var(--line-2)}
+  .lv:last-child{border-right:none}
+  .lv .n{font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:500; color:var(--ink)}
+  .lv .n.up{color:var(--buy)} .lv .n.dn{color:var(--avoid)}
+  .lv .l{font-size:9.5px; color:var(--faint); margin-top:3px; text-transform:uppercase; letter-spacing:.05em}
+  .lv .l.d50{color:var(--wait)} .lv .l.d200{color:var(--muted)}
+
+  .pchart{position:relative; margin-top:8px; touch-action:none; cursor:crosshair; user-select:none}
+  .pchart svg{width:100%; height:190px; display:block}
+  .crosshair{position:absolute; top:0; bottom:22px; width:1px; background:var(--indigo); opacity:0; pointer-events:none}
+  .cdot{position:absolute; width:9px; height:9px; border-radius:50%; background:var(--indigo); border:2px solid #fff; opacity:0; pointer-events:none; transform:translate(-50%,-50%); box-shadow:0 1px 4px rgba(0,0,0,.2)}
+  .ctip{position:absolute; top:2px; background:var(--indigo); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:10px; padding:5px 8px; border-radius:7px; opacity:0; pointer-events:none; transform:translateX(-50%); white-space:nowrap; line-height:1.4; text-align:center}
+  .ctip .cprice{font-size:12px; font-weight:500} .ctip .cstretch{opacity:.85}
+  .pchart.active .crosshair,.pchart.active .cdot,.pchart.active .ctip{opacity:1}
+  .xaxis{display:flex; justify-content:space-between; padding:6px 4px 0; font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--faint)}
+
+  .scrub-hint{text-align:center; font-size:11px; color:var(--indigo); margin-top:8px; font-family:'IBM Plex Mono',monospace}
+
+  .rs-flag{background:var(--avoid-bg); border:1px solid #f0d5d2; border-radius:13px; padding:13px 15px}
+  .rs-flag .hd{display:flex; align-items:center; gap:8px; font-weight:600; font-size:13px; color:var(--avoid); margin-bottom:6px}
+  .rs-flag .hd .z{margin-left:auto; font-family:'IBM Plex Mono',monospace; font-size:11px; background:#fff; border:1px solid #f0d5d2; padding:2px 8px; border-radius:6px}
+  .rs-flag p{font-size:12.5px; line-height:1.5}
+  .mc-stats{display:flex; gap:9px}
+  .mc-stat{flex:1; background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:12px 10px; text-align:center}
+  .mc-stat b{font-family:'Fraunces',serif; font-size:21px; font-weight:600; display:block; line-height:1}
+  .mc-stat.good b{color:var(--buy)} .mc-stat.risk b{color:var(--avoid)}
+  .mc-stat span{font-size:10px; color:var(--muted); display:block; margin-top:5px; line-height:1.3}
+
+  .fc-row{display:grid; grid-template-columns:50px 1fr 46px; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line-2)}
+  .fc-row:last-child{border-bottom:none}
+  .fc-h{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--muted)}
+  .fc-txt{font-size:13px} .fc-txt b{font-weight:600}
+  .fc-bar{width:40px; height:4px; border-radius:2px; background:var(--raised); overflow:hidden; justify-self:end}
+  .fc-bar i{display:block; height:100%; border-radius:2px}
+  .copy-bar{padding:16px 20px 8px}
+  .copy-btn{width:100%; background:var(--indigo); color:#fff; border:none; border-radius:14px; padding:15px; font-size:14px; font-weight:600; cursor:pointer}
+  .hint{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); font-size:12px; color:#8a9088; font-family:'IBM Plex Mono',monospace}
+  @media(max-width:900px){.hint{display:none}}
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="label">v3 — as-of · dated axes · live averages · drag the price chart</div>
+  <div class="status" id="statusbar" onclick="flashTop()"><span>9:41</span><span class="tap-tip">▲ top</span><span class="dots">●●● ᯤ ▮</span></div>
+
+  <div class="screen">
+    <div class="sheet-top">
+      <button class="close">×</button>
+      <div class="mid"><div class="tick">SMH</div><div class="sub">VanEck Semiconductor</div></div>
+      <span class="price">550.61 ▾3.2%</span>
+    </div>
+
+    <div class="asof"><span class="live"></span>As of <b>Jul 17, 2026 · 11:06 AM ET</b><span class="delay">15-min delayed</span></div>
+
+    <div class="ptabs">
+      <div class="ptab active" id="tab1" onclick="show(1)">Overview</div>
+      <div class="ptab" id="tab2" onclick="show(2)">Technicals</div>
+    </div>
+
+    <div class="pages">
+      <!-- OVERVIEW -->
+      <div class="page" id="page1">
+        <div class="verdict">
+          <div class="eyebrow">Recommendation</div>
+          <div class="pill">Wait</div>
+          <div class="takeaway">A small starter on a confirmed reclaim is defensible. Full size waits — semis are stretched vs. the market and the low may not be set.</div>
+          <div class="conf"><div class="row"><span>Confidence</span><b>Moderate · 44</b></div><div class="meter"><div class="fill"></div></div></div>
+        </div>
+
+        <!-- price with live values + scrubber -->
+        <div class="section">
+          <h3>Price <span class="per">3-month · daily</span></h3>
+          <div class="live-vals">
+            <div class="lv"><div class="n dn" id="v-price">550.61</div><div class="l">Level</div></div>
+            <div class="lv"><div class="n" id="v-50">571.40</div><div class="l d50">50-day avg</div></div>
+            <div class="lv"><div class="n" id="v-200">548.10</div><div class="l d200">200-day avg</div></div>
+          </div>
+          <div class="pchart" id="pchart">
+            <svg viewBox="0 0 340 190" preserveAspectRatio="none" id="psvg">
+              <path id="ma200" d="M0,120 C80,116 160,110 240,104 C300,100 320,99 340,98" fill="none" stroke="#949aa4" stroke-width="1.3" opacity=".7"/>
+              <path id="ma50" d="M0,95 C60,80 120,58 180,60 C240,64 300,92 340,104" fill="none" stroke="#b0812f" stroke-width="1.3" opacity=".85"/>
+              <path id="price" d="M0,110 C30,95 55,60 80,50 C105,42 125,70 150,72 C175,74 195,55 220,85 C245,112 270,100 300,118 C320,128 332,120 340,116" fill="none" stroke="#1c2128" stroke-width="2"/>
+            </svg>
+            <div class="crosshair" id="cross"></div>
+            <div class="cdot" id="cdot"></div>
+            <div class="ctip" id="ctip"><div class="cprice">—</div><div class="cdate">—</div><div class="cstretch">—</div></div>
+          </div>
+          <div class="xaxis"><span>Apr 17</span><span>May 17</span><span>Jun 17</span><span>Jul 17</span></div>
+          <div class="scrub-hint" id="scrubhint">⟵ drag across the chart to read any day ⟶</div>
+        </div>
+
+        <div class="section">
+          <h3>Stretch vs. market <span class="badge" style="margin-left:auto;font-family:Inter;font-size:10px;background:var(--indigo-soft);color:var(--indigo);padding:2px 7px;border-radius:5px;font-weight:600">relative strength</span></h3>
+          <div class="rs-flag"><div class="hd">⚠ Extreme reading<span class="z">98th pctile</span></div>
+          <p>Semis have outrun the S&amp;P over 100 days more than almost any point in 15 years. Last 9 times this stretched, 7 reverted within 8 weeks. Full detail on Technicals.</p></div>
+        </div>
+
+        <div class="section">
+          <h3>Where the bottom could land <span class="per">Monte Carlo · 200k paths</span></h3>
+          <div class="mc-stats">
+            <div class="mc-stat good"><b>54%</b><span>low is in this week</span></div>
+            <div class="mc-stat"><b>~$540</b><span>likely trough</span></div>
+            <div class="mc-stat risk"><b>10%</b><span>tail below $490</span></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Odds it's higher, by horizon</h3>
+          <div class="fc-row"><span class="fc-h">1 day</span><span class="fc-txt">roughly a <b>coin flip</b></span><span class="fc-bar"><i style="width:30%;background:var(--wait)"></i></span></div>
+          <div class="fc-row"><span class="fc-h">1 mo</span><span class="fc-txt"><b>~61%</b> higher</span><span class="fc-bar"><i style="width:50%;background:var(--wait)"></i></span></div>
+          <div class="fc-row"><span class="fc-h">3 mo</span><span class="fc-txt"><b>~68%</b> · typ <b>+12%</b></span><span class="fc-bar"><i style="width:64%;background:var(--buy)"></i></span></div>
+          <div class="fc-row"><span class="fc-h">6 mo</span><span class="fc-txt"><b>~74%</b> · typ <b>+18%</b></span><span class="fc-bar"><i style="width:70%;background:var(--buy)"></i></span></div>
+          <div class="fc-row"><span class="fc-h">1 yr</span><span class="fc-txt"><b>~79%</b> higher</span><span class="fc-bar"><i style="width:55%;background:var(--buy)"></i></span></div>
+        </div>
+        <div class="copy-bar"><button class="copy-btn">⧉ &nbsp;Copy this for Claude</button></div>
+      </div>
+
+      <!-- TECHNICALS (brief, points back to full page in v2) -->
+      <div class="page hide" id="page2">
+        <div class="section" style="border-top:none">
+          <h3>Trend you might miss <span class="per">3-month</span></h3>
+          <div class="rs-flag" style="background:var(--indigo-soft);border-color:var(--indigo-line)">
+            <div class="hd" style="color:var(--indigo)">✦ Momentum divergence</div>
+            <p style="color:var(--ink)">Price made a lower low at this flush but momentum made a higher low — selling pressure is weakening under the surface. Same scrubbable charts and dated axes as Overview, with RSI, MACD and volume stacked here.</p>
+          </div>
+        </div>
+        <div class="section"><p style="font-size:13px;color:var(--muted);line-height:1.5">(Technicals page carries the full RSI / MACD / volume stack from v2, each with its own dated axis and live current-value readout — omitted here to keep the demo focused on the new price scrubber.)</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="hint">drag your finger across the price chart — the crosshair shows date, level, and stretch</div>
+
+<script>
+  function show(n){
+    document.getElementById('page1').classList.toggle('hide', n!==1);
+    document.getElementById('page2').classList.toggle('hide', n!==2);
+    document.getElementById('tab1').classList.toggle('active', n===1);
+    document.getElementById('tab2').classList.toggle('active', n===2);
+  }
+  let last=0;
+  function flashTop(){const now=Date.now(); const bar=document.getElementById('statusbar');
+    if(now-last<400){document.getElementById('page1').scrollTo({top:0,behavior:'smooth'});}
+    last=now; bar.classList.add('flash'); setTimeout(()=>bar.classList.remove('flash'),600);}
+
+  // ---- scrubber ----
+  const pchart=document.getElementById('pchart'), price=document.getElementById('price');
+  const cross=document.getElementById('cross'), cdot=document.getElementById('cdot'), ctip=document.getElementById('ctip');
+  const hint=document.getElementById('scrubhint');
+  const vp=document.getElementById('v-price');
+  // synthetic daily series matching the price path (63 trading days Apr17->Jul17)
+  const start=new Date(2026,3,17); const N=63;
+  const base=[520,528,540,548,560,566,572,560,548,556,564,570,558,546,540,552,560,568,556,544,538,550,560,571,566,556,550,544,552,560,568,572,560,548,544,552,560,566,558,548,540,548,556,562,554,544,536,544,552,558,550,540,532,540,548,556,548,542,548,556,554,552,550.61];
+  const mean100=520, sd100=16; // for stretch demo
+  function fmtDate(d){return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
+  function move(clientX){
+    const r=pchart.getBoundingClientRect();
+    let x=Math.max(0,Math.min(clientX-r.left, r.width));
+    const frac=x/r.width; const i=Math.round(frac*(N-1));
+    const val=base[i]; const d=new Date(start); d.setDate(d.getDate()+Math.round(i*(122/N)));
+    // map value to y within svg (viewBox 190 tall, data range ~515-575)
+    const y=190-((val-512)/(576-512))*190;
+    const px=(i/(N-1))*r.width;
+    cross.style.left=px+'px';
+    cdot.style.left=px+'px'; cdot.style.top=(y/190*r.height)+'px';
+    const stretch=((val-mean100)/sd100).toFixed(1);
+    ctip.querySelector('.cprice').textContent='$'+val.toFixed(2);
+    ctip.querySelector('.cdate').textContent=fmtDate(d);
+    ctip.querySelector('.cstretch').textContent='stretch '+(stretch>=0?'+':'')+stretch+'σ';
+    let tx=px; tx=Math.max(46,Math.min(tx,r.width-46)); ctip.style.left=tx+'px';
+    vp.textContent=val.toFixed(2);
+    pchart.classList.add('active'); hint.style.opacity=0;
+  }
+  function end(){pchart.classList.remove('active'); vp.textContent='550.61'; hint.style.opacity=1;}
+  pchart.addEventListener('pointerdown',e=>{move(e.clientX);});
+  pchart.addEventListener('pointermove',e=>{if(e.pressure>0||e.buttons>0||pchart.classList.contains('active'))move(e.clientX);});
+  pchart.addEventListener('pointerup',end);
+  pchart.addEventListener('pointerleave',end);
+</script>
+</body>
+</html>

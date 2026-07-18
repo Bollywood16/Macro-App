@@ -113,6 +113,38 @@ def fetch_history(symbol: str) -> pd.Series:
     return close
 
 
+def fetch_ohlcv(symbol: str, interval: str = "1d", period: str | None = None) -> pd.DataFrame:
+    """OHLCV fetch shared by the tear-sheet engines (dip_context's volume
+    forensics, tech_read's technicals/charts, bottom_scenarios). Kept
+    separate from fetch_history() above (close-only) rather than changing
+    that function's return shape — every existing caller (forecast_engine,
+    rotation_engine, extension_overlay, ...) depends on fetch_history
+    returning a bare Series, and none of them need O/H/L/V.
+
+    interval="15m" (intraday) is Yahoo-limited to ~60 days of history, so
+    period defaults to "60d" for any non-daily interval rather than "max"
+    (which yfinance would otherwise reject or silently clamp).
+    """
+    import yfinance as yf
+    if period is None:
+        period = "max" if interval == "1d" else "60d"
+    df = yf.download(symbol, period=period, interval=interval,
+                      auto_adjust=True, progress=False)
+    if df is None or df.empty:
+        raise RuntimeError(f"No OHLCV data for {symbol} ({interval})")
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    out = pd.DataFrame({
+        "open": df["Open"], "high": df["High"], "low": df["Low"],
+        "close": df["Close"], "volume": df["Volume"],
+    }).dropna(subset=["close"])
+    idx = pd.to_datetime(out.index)
+    if idx.tz is not None:
+        idx = idx.tz_convert(None)
+    out.index = idx
+    return out
+
+
 def fetch_trailing_pe(symbol: str):
     try:
         import yfinance as yf

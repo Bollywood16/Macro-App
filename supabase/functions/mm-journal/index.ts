@@ -67,6 +67,15 @@ const REQUIRED_FIELDS: Record<string, string[]> = {
   get_calibration_data: [],
   create_registry_entry: ["model_version", "status"],
   list_registry_entries: [],
+  // Market Memory tear-sheet upgrade (BUILD.md / db/003_tearsheet_layer):
+  // episodes.py reads the library back here to merge cause/what_ended_it
+  // into a fresh statistical-analog scan (list_episodes), and both the
+  // Python fingerprinting pass and the handoff write-back path use
+  // upsert_episode — insert for a newly-found date, update for annotating
+  // an existing one — matching episodes' select/insert/update grant (no
+  // delete) in db/003.
+  list_episodes: ["asset"],
+  upsert_episode: ["asset", "event_date"],
 };
 
 const GITHUB_REPO = "Bollywood16/Macro-App";
@@ -313,6 +322,24 @@ Deno.serve(async (req) => {
           })),
         );
         return json({ rows });
+      }
+
+      case "list_episodes": {
+        const { data, error } = await supabase
+          .from("episodes").select("*")
+          .eq("asset", payload.asset)
+          .order("event_date", { ascending: false });
+        if (error) throw error;
+        return json({ episodes: data });
+      }
+
+      case "upsert_episode": {
+        const { data, error } = await supabase
+          .from("episodes")
+          .upsert(payload, { onConflict: "asset,event_date" })
+          .select().single();
+        if (error) throw error;
+        return json({ episode: data });
       }
 
       case "create_registry_entry": {

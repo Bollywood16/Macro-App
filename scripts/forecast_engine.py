@@ -84,13 +84,30 @@ ROOT = os.path.dirname(HERE)
 UNIVERSE_PATH = os.path.join(HERE, "universe_config.json")
 ROTATION_CONFIG_PATH = os.path.join(HERE, "rotation_config.json")
 
+# BUILD.md tear-sheet engines (Market Memory upgrade, Stage: extend the
+# existing TearSheet rather than build a parallel one — see engines/*.py
+# module docstrings for the reuse contract each one follows). Imported
+# here, not from within run_one(), so a missing/broken engines/ directory
+# fails at startup with a clear traceback instead of silently degrading
+# every single ticker run.
+sys.path.insert(0, os.path.join(ROOT, "engines"))
+import dip_context as eng_dip_context          # noqa: E402
+import relative_strength as eng_relative_strength  # noqa: E402
+import tech_read as eng_tech_read              # noqa: E402
+import bottom_scenarios as eng_bottom_scenarios  # noqa: E402
+import episodes as eng_episodes                # noqa: E402
+
 FUNCTION_URL = os.environ.get(
     "MM_FUNCTION_URL",
     "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/mm-journal",
 )
 
-HORIZONS = [1, 5, 20, 60]
+# 126/252 (~6mo/~1yr) appended for BUILD.md's tear-sheet forecast strip.
+# Purely additive: 1/5/20/60 keep their existing meaning and historical
+# continuity (calibration groups by horizon_days) — nothing is renumbered.
+HORIZONS = [1, 5, 20, 60, 126, 252]
 BENCHMARK = "SPY"
+NASDAQ_BENCHMARK = "QQQ"
 EPISODE_GAP = 20            # trading days; spec 7.4 item 5's example gap
 ANALOG_CANDIDATES = 120     # nearest neighbors considered before thinning
 ANALOG_KEEP = 60            # cap on independent analog episodes kept
@@ -147,6 +164,25 @@ def load_universe():
     return merged
 
 
+def load_analog_map() -> dict:
+    """universe_config.json's `analog_map` (already ships today, used by
+    the existing TearSheet's relative-strip comparison — Stage F2c) is
+    this app's benchmark lookup table. Reused as-is rather than adding a
+    parallel config: BUILD.md's "any ETF resolves its three comparators"
+    becomes {S&P 500: SPY, Nasdaq 100: QQQ} (fixed macro pair) + whichever
+    sector peer (if any) analog_map names for this ticker."""
+    with open(UNIVERSE_PATH) as f:
+        return json.load(f).get("analog_map", {})
+
+
+def resolve_benchmarks(ticker: str, analog_map: dict) -> dict:
+    benchmarks = {"S&P 500": BENCHMARK, "Nasdaq 100": NASDAQ_BENCHMARK}
+    peer = analog_map.get(ticker)
+    if peer:  # missing key or explicit null both mean "no sector analog"
+        benchmarks["Peers"] = peer
+    return benchmarks
+
+
 # --------------------------------------------------------- feature build
 
 
@@ -158,6 +194,25 @@ def append_manual_price(close: pd.Series, price: float) -> pd.Series:
     else:
         s = pd.concat([s, pd.Series([price], index=[today])])
     return s
+
+
+def append_manual_price_ohlcv(ohlcv: pd.DataFrame, price: float) -> pd.DataFrame:
+    """OHLCV counterpart to append_manual_price() above, so the tear-sheet
+    engines see the same synthetic "today" bar the rest of an intraday-
+    proxy run does. Volume is left NaN for a synthetic bar — a manual
+    override has no real traded volume to report, and the volume-forensics
+    reads already treat NaN/empty volume as `"available": False` rather
+    than guessing."""
+    today = pd.Timestamp.now().normalize()
+    df = ohlcv.copy()
+    if len(df) and df.index[-1].normalize() == today:
+        df.loc[df.index[-1], "close"] = price
+    else:
+        new_row = pd.DataFrame(
+            {"open": [price], "high": [price], "low": [price],
+             "close": [price], "volume": [float("nan")]}, index=[today])
+        df = pd.concat([df, new_row])
+    return df
 
 
 def build_feature_frame(close: pd.Series, spy_close: pd.Series,
@@ -469,11 +524,70 @@ def mm_journal(op, payload):
         return None
 
 
+def fetch_episode_library(ticker, dry_run):
+    """Read back this ticker's annotated episodes (cause/what_ended_it)
+    from Supabase so episodes.find_analogs() can merge them instead of
+    treating every match as unresearched. Requires mm-journal's
+    `list_episodes` op (drafted alongside this change — see the handoff
+    notes; mm-journal itself is pasted into the Supabase dashboard, not
+    committed here, so this fails soft to "no library" until that op is
+    deployed, exactly like every other mm_journal() call in this file when
+    APP_PASSPHRASE is unset)."""
+    if dry_run:
+        return None
+    resp = mm_journal("list_episodes", {"asset": ticker})
+    return (resp or {}).get("episodes")
+
+
+def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
+                              universe_prices, analog_map, dry_run):
+    """BUILD.md's tear-sheet engines, run once per ticker off one shared
+    OHLCV fetch and folded into evidence_json (see run_one below) rather
+    than a parallel pipeline — the 'extend the existing TearSheet' path.
+    Wrapped so any single engine's failure (bad data, thin history) never
+    takes down the forecast the rest of this file already computes."""
+    extras = {}
+    try:
+        extras["dip_context"] = eng_dip_context.dip_context(
+            ohlcv, spy_close_run, vix, oas, ticker)
+    except Exception as e:
+        print(f"[warn] dip_context failed for {ticker}: {e}")
+    try:
+        extras["tech_read"] = eng_tech_read.tech_read(ohlcv, ticker)
+    except Exception as e:
+        print(f"[warn] tech_read failed for {ticker}: {e}")
+    try:
+        extras["bottom_scenarios"] = eng_bottom_scenarios.bottom_scenarios(ohlcv, ticker)
+    except Exception as e:
+        print(f"[warn] bottom_scenarios failed for {ticker}: {e}")
+    try:
+        benchmarks = resolve_benchmarks(ticker, analog_map)
+        bench_prices = dict(universe_prices)
+        for sym in benchmarks.values():
+            if sym not in bench_prices:
+                try:
+                    bench_prices[sym] = re_engine.fetch_history(sym)
+                except Exception as e:
+                    print(f"[warn] benchmark {sym} unavailable for {ticker}: {e}")
+        bench_prices[ticker] = ohlcv["close"]
+        extras["relative_strength"] = eng_relative_strength.relative_strength(
+            bench_prices, ticker, benchmarks)
+    except Exception as e:
+        print(f"[warn] relative_strength failed for {ticker}: {e}")
+    try:
+        library = fetch_episode_library(ticker, dry_run)
+        extras["episodes"] = eng_episodes.find_analogs(ohlcv, library)
+    except Exception as e:
+        print(f"[warn] episodes failed for {ticker}: {e}")
+    return extras
+
+
 # ---------------------------------------------------------------- run one
 
 
 def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
-            manual_price, market_status, dry_run, rotation_ctx=None, source=None):
+            manual_price, market_status, dry_run, rotation_ctx=None, source=None,
+            analog_map=None):
     ticker = asset["ticker"]
     close = universe_prices.get(ticker)
     if close is None or len(close) < 260:
@@ -518,6 +632,23 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         if all(abs(pos - k) >= EPISODE_GAP for k in ensemble_pos):
             ensemble_pos.append(pos)
     ensemble_pos.sort()
+
+    # BUILD.md tear-sheet engines: one shared OHLCV fetch per ticker feeds
+    # all five (dip_context needs volume; tech_read/bottom_scenarios need
+    # OHLC(V); relative_strength/episodes just need close, taken from the
+    # same frame for consistency). Kept out of the existing analog/regime
+    # path above entirely — that machinery stays on its original
+    # close-only Series so this can't regress it.
+    tearsheet_extras = {}
+    try:
+        ohlcv = re_engine.fetch_ohlcv(ticker)
+        if intraday_proxy:
+            ohlcv = append_manual_price_ohlcv(ohlcv, manual_price)
+        tearsheet_extras = compute_tearsheet_extras(
+            ticker, ohlcv, spy_close_run, vix, oas, universe_prices,
+            analog_map or {}, dry_run)
+    except Exception as e:
+        print(f"[warn] tear-sheet OHLCV fetch failed for {ticker}: {e}")
 
     as_of = datetime.now(timezone.utc)
     if intraday_proxy:
@@ -639,6 +770,12 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
                 "analog": horizon_rows[h]["analog"],
                 "regime_base_rate": horizon_rows[h]["regime"],
             },
+            # BUILD.md tear-sheet engines: ticker-level (not horizon-
+            # specific), duplicated onto every horizon row the same way
+            # why_it_triggered/warnings/sub_models already are above, so
+            # the frontend can read it off whichever row it happens to
+            # have on hand without an extra fetch.
+            "tearsheet_extras": tearsheet_extras,
         }
 
         payload = {
@@ -806,6 +943,7 @@ def main():
             print(f"[warn] skipping {t}: {e}")
 
     rotation_ctx = build_rotation_context(universe_prices)
+    analog_map = load_analog_map()
 
     on_demand = args.ticker is not None
     source = args.source or ("on_demand" if on_demand else "batch")
@@ -814,7 +952,8 @@ def main():
         market_status = "closed" if not on_demand else args.market_status
         result = run_one(asset, universe_prices, spy_close, spy_trend_df,
                           vix, oas, args.price if on_demand else None,
-                          market_status, args.dry_run, rotation_ctx, source=source)
+                          market_status, args.dry_run, rotation_ctx, source=source,
+                          analog_map=analog_map)
         if on_demand:
             if not result:
                 # A silent no-op run shows green in Actions and leaves the

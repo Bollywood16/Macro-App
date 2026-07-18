@@ -576,7 +576,13 @@ def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
         print(f"[warn] relative_strength failed for {ticker}: {e}")
     try:
         library = fetch_episode_library(ticker, dry_run)
-        extras["episodes"] = eng_episodes.find_analogs(ohlcv, library)
+        ep = eng_episodes.find_analogs(ohlcv, library)
+        # Pre-write the handoff prompt here (Python knows which dates need
+        # research), rather than asking the frontend to re-derive the same
+        # "which dates are unannotated" logic in JS — same reuse contract
+        # as the rest of this file: Python computes, UI only renders.
+        ep["handoff_prompt"] = eng_episodes.build_handoff_prompt(ticker, ep)
+        extras["episodes"] = ep
     except Exception as e:
         print(f"[warn] episodes failed for {ticker}: {e}")
     return extras

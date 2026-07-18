@@ -917,7 +917,7 @@ function tsForecastStripHTML(rows){
     </div>`;
 }
 
-function tsBuildHandoffBundle(ticker, rows, extras){
+function tsBuildHandoffBundle(ticker, rows, extras, decisions){
   const row = rows?.find(r=>r.horizon_days===5) || rows?.[0];
   const dc = extras?.dip_context, rs = extras?.relative_strength, mc = extras?.bottom_scenarios;
   const lines = [`Market Memory tear sheet — ${ticker}`, `As of ${row?.as_of_ts || 'unknown'}`, ""];
@@ -928,6 +928,14 @@ function tsBuildHandoffBundle(ticker, rows, extras){
   if(rows?.length){
     lines.push("", "Forecast by horizon:");
     rows.forEach(r => lines.push(`  ${r.horizon_days}d: ${pct0(r.p_positive)} positive, median ${pct(r.q50)}, confidence ${r.confidence_label}`));
+  }
+  // BUILD.md §5: recent decisions rows, so the conversation inherits this
+  // ticker's own history instead of starting cold every time.
+  if(decisions?.length){
+    lines.push("", "Recent decisions on this ticker:");
+    decisions.forEach(d => lines.push(`  ${new Date(d.created_at).toLocaleDateString()}: `+
+      `${d.action}${d.thesis ? ' — '+d.thesis : ''}`+
+      `${d.forecasts?.horizon_days ? ` (${d.forecasts.horizon_days}d forecast, ${d.forecasts.confidence_label} confidence)` : ''}`));
   }
   lines.push("", "Framework rules for this conversation: confidence gates presentation — a "+
     "low-sample or likely-mined read never presents as a green call. WAIT and AVOID render "+
@@ -1052,6 +1060,24 @@ function tsRsBreakdownHTML(extras){
     </div>`;
 }
 
+function tsEpisodeRowHTML(e, ticker){
+  const body = `<div class="hd"><b>${esc(e.date)}</b><span>${e.drawdown_pct}% drawdown</span></div>
+      <p>Resolved ${e.fwd_126d_pct>0?'+':''}${e.fwd_126d_pct}% over 6 months (worst interim ${e.worst_interim_pct}%).
+        ${e.annotated ? esc(e.cause || 'Annotated, no cause text on file.') : 'Not yet researched.'}</p>`;
+  if(e.annotated) return `<div class="ts-ep-row">${body}</div>`;
+  const uid = esc(ticker+"-"+e.date);
+  return `<div class="ts-ep-row">${body}
+      <button class="ts-ghost-btn ts-ep-toggle" style="margin-top:8px" data-uid="${uid}">+ Paste research back</button>
+      <div class="ts-ep-form" id="form-${uid}" style="display:none;margin-top:8px">
+        <label class="fl">Cause</label>
+        <textarea class="formfield ep-cause" placeholder="What caused this drawdown"></textarea>
+        <label class="fl">What ended it</label>
+        <textarea class="formfield ep-ended" placeholder="What turned it around"></textarea>
+        <button class="ts-ghost-btn ep-save" data-ticker="${esc(ticker)}" data-date="${esc(e.date)}">Save annotation</button>
+        <div class="ts-p muted ep-save-status" style="margin-top:4px"></div>
+      </div>
+    </div>`;
+}
 function tsEpisodesHTML(extras, ticker){
   const ep = extras?.episodes;
   if(!ep) return "";
@@ -1059,11 +1085,7 @@ function tsEpisodesHTML(extras, ticker){
   return `<div class="ts-section" style="border-top:1px solid var(--ts-line)">
       <h3>Episodes like this <span class="per">${ep.n} found</span></h3>
       <div class="ts-p muted" style="margin-bottom:10px">${esc((ep.plain||[]).join(" "))}</div>
-      ${rows.map(e=>`<div class="ts-ep-row">
-          <div class="hd"><b>${esc(e.date)}</b><span>${e.drawdown_pct}% drawdown</span></div>
-          <p>Resolved ${e.fwd_126d_pct>0?'+':''}${e.fwd_126d_pct}% over 6 months (worst interim ${e.worst_interim_pct}%).
-            ${e.annotated ? esc(e.cause || 'Annotated, no cause text on file.') : 'Not yet researched.'}</p>
-        </div>`).join("")}
+      ${rows.map(e=>tsEpisodeRowHTML(e, ticker)).join("")}
       ${ep.handoff_prompt ? `<button class="ts-ghost-btn" id="tsEpisodesCopyBtn">⧉ &nbsp;Copy research prompt for Claude</button>` : ""}
     </div>`;
 }
@@ -1085,12 +1107,12 @@ function tsOverviewPageHTML(extras, rows, fullDetail, ticker){
   return parts.filter(Boolean).join("");
 }
 
-function tsTechnicalsPageHTML(extras){
+function tsTechnicalsPageHTML(extras, ticker){
   return tsPeriodRowHTML()
     + tsTrendCalloutHTML(extras)
     + `<div id="tsStackedCharts">` + tsStackedChartsHTML(extras) + `</div>`
     + tsRsBreakdownHTML(extras)
-    + tsEpisodesHTML(extras);
+    + tsEpisodesHTML(extras, ticker);
 }
 
 // Cumulative return vs SPY + vs the nearest sector-analog peer, if one is
@@ -1204,7 +1226,7 @@ async function openTearSheet(ticker, label, opts){
   ].join("");
   document.getElementById("tsPage1").innerHTML =
     tsOverviewPageHTML(extras, rows, opts.fullDetail, ticker) + relativeFallbackHTML;
-  document.getElementById("tsPage2").innerHTML = tsTechnicalsPageHTML(extras);
+  document.getElementById("tsPage2").innerHTML = tsTechnicalsPageHTML(extras, ticker);
 
   // fullDetail: fcHorizons/fcSelectedHorizon were already set by fcRender()
   // before this was called — fcRenderCard/fcRenderDecisionForm render into
@@ -1227,13 +1249,18 @@ async function openTearSheet(ticker, label, opts){
 
   const copyBtn = document.getElementById("tsCopyBtn");
   if(copyBtn) copyBtn.onclick = async () => {
-    const text = tsBuildHandoffBundle(ticker, rows, extras);
+    copyBtn.disabled = true;
+    let decisions = [];
+    try{ decisions = (await mmCall("query_decisions", {ticker, limit: 5})).decisions || []; }
+    catch(e){ /* handoff still works without decision history */ }
+    const text = tsBuildHandoffBundle(ticker, rows, extras, decisions);
     try{
       await navigator.clipboard.writeText(text);
       copyBtn.textContent = "Copied ✓";
     }catch(e){
       copyBtn.textContent = "Couldn't copy — clipboard blocked";
     }
+    copyBtn.disabled = false;
     setTimeout(()=>{ copyBtn.textContent = "⧉  Copy this for Claude"; }, 2500);
   };
   const epCopyBtn = document.getElementById("tsEpisodesCopyBtn");
@@ -1246,6 +1273,32 @@ async function openTearSheet(ticker, label, opts){
     }
     setTimeout(()=>{ epCopyBtn.textContent = "⧉  Copy research prompt for Claude"; }, 2500);
   };
+  // Episodes write-back (BUILD.md §5): paste the causal narrative Claude
+  // returned straight into the episode library via the already-deployed
+  // upsert_episode op, so the same date never needs re-researching.
+  body.querySelectorAll(".ts-ep-toggle").forEach(btn => btn.onclick = () => {
+    const f = document.getElementById("form-"+btn.dataset.uid);
+    f.style.display = f.style.display === "none" ? "block" : "none";
+  });
+  body.querySelectorAll(".ep-save").forEach(btn => btn.onclick = async () => {
+    const form = btn.closest(".ts-ep-form");
+    const cause = form.querySelector(".ep-cause").value.trim();
+    const endedIt = form.querySelector(".ep-ended").value.trim();
+    const status = form.querySelector(".ep-save-status");
+    if(!cause && !endedIt){ status.textContent = "Enter at least one field."; return; }
+    btn.disabled = true; status.textContent = "Saving…";
+    try{
+      await mmCall("upsert_episode", {
+        asset: btn.dataset.ticker, event_date: btn.dataset.date,
+        cause: cause || null, what_ended_it: endedIt || null, source: "handoff",
+      });
+      status.textContent = "Saved — won't need re-researching next time.";
+    }catch(e){
+      status.textContent = e.message;
+    }finally{
+      btn.disabled = false;
+    }
+  });
 
   body.querySelectorAll(".ts-refresh").forEach(btn => btn.onclick = async () => {
     btn.disabled = true; btn.textContent = "Refreshing…";

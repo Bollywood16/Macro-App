@@ -61,7 +61,7 @@
   summary{cursor:pointer;padding:9px 0;font-weight:600;font-size:13.5px;list-style:none}
   details p{color:var(--dim);font-size:12.5px;padding:0 0 10px}
 
-  /* ---------- desk (chat + sectors/size heat strip + macro pulse) ----------
+  /* ---------- desk / Home screen ----------
      display MUST live only on the .on rule -- a bare #view-desk{display:...}
      is an ID selector and always beats the generic .view{display:none} class
      rule regardless of whether .on is present, which was silently keeping
@@ -71,38 +71,8 @@
   #view-desk{flex-direction:column;height:calc(100vh - 60px);max-width:780px}
   #view-desk.on{display:flex}
   .desk-scroll{flex:1;overflow-y:auto;padding:2px 2px 0}
-  .thread{padding:8px 2px}
-  .greeting{text-align:center;margin:16px 0 8px}
-  .greeting h1{font-size:28px}
-  .greeting p{color:var(--dim);font-size:14px;margin-top:6px}
-  .msg{margin:10px 0;display:flex}
-  .msg.user{justify-content:flex-end}
-  .msg.user .bubble{background:var(--blue);color:#fff;border-radius:18px 18px 4px 18px;
-    padding:10px 14px;max-width:78%;font-size:14.5px}
-  .msg.ai .bubble{background:var(--card);border:1px solid var(--line);
-    border-radius:18px 18px 18px 4px;padding:14px;max-width:100%;width:100%;
-    box-shadow:0 1px 2px rgba(0,0,0,.03)}
-  .hl{font-size:15.5px;font-weight:700;margin-bottom:8px}
-  .stance{display:inline-block;background:rgba(0,113,227,.10);color:var(--blue);
-    font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;margin:6px 0 4px}
-  .bubble p{font-size:13.5px;margin:4px 0}
   .klabel{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
     color:var(--dim);margin-top:8px}
-  .bubble ul{margin:3px 0 3px 16px;font-size:13px;color:var(--dim)}
-  .break{color:var(--red);font-size:13px}
-  .thinking{color:var(--dim);font-size:13.5px;padding:8px 2px}
-  .composer{display:flex;gap:8px;padding-top:10px}
-  .composer select,.composer input.ticker-focus{border:1px solid var(--line);border-radius:12px;
-    background:var(--card);font:600 13px -apple-system,sans-serif;padding:0 10px;
-    max-width:130px;flex:0 0 auto;text-transform:uppercase}
-  .composer .box{flex:1;display:flex;background:var(--card);border:1px solid var(--line);
-    border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-  .composer input{flex:1;border:0;background:transparent;padding:13px 14px;
-    font:15px -apple-system,sans-serif;outline:none}
-  .composer button{border:0;background:var(--blue);color:#fff;border-radius:12px;
-    font:700 14px -apple-system,sans-serif;padding:0 16px;margin:5px;cursor:pointer}
-  .composer button:disabled{opacity:.5}
-  .errline{color:var(--red);font-size:12.5px;padding:6px 2px}
 
   /* ---------- forecast / journal ---------- */
   .formfield{width:100%;-webkit-appearance:none;background:var(--card);
@@ -136,10 +106,6 @@
     font-size:12.5px;min-width:88px;cursor:pointer;background:var(--card)}
   .hchip.on{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}
   .hchip .hd{font-weight:700}
-  /* heat-strip tiles reuse .hchip's shape + tokens.css's .chip-good/.chip-bad
-     tint; these need the extra specificity to beat .hchip's own background */
-  .hchip.chip-good{background:rgba(36,138,61,.10);border-color:transparent}
-  .hchip.chip-bad{background:rgba(215,0,21,.10);border-color:transparent}
 
   /* ==================================================================
      TearSheet design tokens (Market Memory upgrade, matching the v2/v3
@@ -297,6 +263,89 @@
   #tearSheet .ts-rsgrid{display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; font-size:12.5px}
   #tearSheet .ts-rsgrid .k{color:var(--ts-muted)}
   #tearSheet .ts-rsgrid .v{font-family:'IBM Plex Mono',monospace; text-align:right}
+
+  /* ==================================================================
+     Home screen (Market Memory upgrade, mm-home.html mockup): search-first
+     watchlist/briefing dashboard replacing the old chat Desk (BUILD.md §4
+     "App home: NOT chat"). Scoped under #view-desk exactly like #tearSheet
+     is scoped, reusing the identical paper/indigo/buy-wait-avoid palette
+     (same values as --ts-* above) under a --home-* prefix since CSS custom
+     properties don't cross sibling elements.
+     ================================================================== */
+  #view-desk{
+    --home-paper:#fbfbf9; --home-surface:#ffffff; --home-raised:#f4f5f3;
+    --home-line:#e7e8e4; --home-line-2:#eeefec;
+    --home-ink:#1c2128; --home-muted:#5c6470; --home-faint:#949aa4;
+    --home-indigo:#4338ca; --home-indigo-line:#c9c5f2;
+    --home-buy:#3f8f5b; --home-buy-bg:#edf6f0;
+    --home-wait:#b0812f; --home-wait-bg:#faf3e4;
+    --home-avoid:#c0574f; --home-avoid-bg:#fbeceb;
+    background:var(--home-paper);
+  }
+  #view-desk .home-head{display:flex; align-items:baseline; justify-content:space-between; padding:6px 4px 0}
+  #view-desk .home-head h1{font-family:'Fraunces',serif; font-weight:500; font-size:23px;
+    letter-spacing:-.015em; color:var(--home-ink)}
+  #view-desk .home-gear{font-size:17px; color:var(--home-faint); cursor:default}
+  #view-desk .home-date{font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+    color:var(--home-faint); letter-spacing:.04em; padding:2px 4px 0}
+  #view-desk .home-searchwrap{padding:16px 4px 6px}
+  #view-desk .home-search{display:flex; align-items:center; gap:11px; background:var(--home-surface);
+    border:1.5px solid var(--home-indigo); border-radius:15px; padding:15px 17px;
+    box-shadow:0 2px 0 var(--home-indigo-line)}
+  #view-desk .home-search .ic{color:var(--home-indigo); font-size:16px}
+  #view-desk .home-search input{flex:1; border:none; outline:none; font-family:inherit;
+    font-size:15.5px; color:var(--home-ink); background:transparent; min-height:var(--tap-min)}
+  #view-desk .home-search input::placeholder{color:var(--home-faint)}
+  #view-desk .home-sect-label{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--home-faint); padding:20px 4px 9px; display:flex;
+    align-items:center; gap:8px}
+  #view-desk .home-sect-label .n{margin-left:auto; color:var(--home-indigo); text-transform:none;
+    letter-spacing:0; font-size:10.5px; font-family:'Inter',sans-serif; font-weight:600}
+  #view-desk .home-brief{margin:0; background:var(--home-surface); border:1px solid var(--home-line);
+    border-radius:15px; overflow:hidden}
+  #view-desk .home-brief .top{padding:15px 17px 13px}
+  #view-desk .home-brief .top p{font-size:14px; line-height:1.55; color:var(--home-ink)}
+  #view-desk .home-flips{border-top:1px solid var(--home-line-2); background:var(--home-raised)}
+  #view-desk .home-flip{display:flex; align-items:center; gap:10px; padding:11px 17px;
+    border-bottom:1px solid var(--home-line-2); font-size:13px; flex-wrap:wrap}
+  #view-desk .home-flip:last-child{border-bottom:none}
+  #view-desk .home-flip .tk{font-family:'IBM Plex Mono',monospace; font-weight:500; width:52px; font-size:12.5px}
+  #view-desk .home-flip .arrow{color:var(--home-faint); font-size:11px}
+  #view-desk .home-flip .from{color:var(--home-faint); font-size:12px}
+  #view-desk .home-flip .to{font-weight:600; font-size:12.5px}
+  #view-desk .home-flip .to.buy{color:var(--home-buy)}
+  #view-desk .home-flip .to.wait{color:var(--home-wait)}
+  #view-desk .home-flip .to.avoid{color:var(--home-avoid)}
+  #view-desk .home-flip .why{margin-left:auto; color:var(--home-muted); font-size:11.5px}
+  #view-desk .home-thead{display:grid; grid-template-columns:1fr 78px 70px; gap:8px; padding:0 4px 7px;
+    font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--home-faint)}
+  #view-desk .home-thead span:nth-child(2), #view-desk .home-thead span:nth-child(3){text-align:right}
+  #view-desk .home-rows{padding:0}
+  #view-desk .home-row{display:grid; grid-template-columns:1fr 78px 70px; gap:8px; align-items:center;
+    background:var(--home-surface); border:1px solid var(--home-line); border-left:3px solid var(--home-line);
+    border-radius:12px; padding:13px 14px; margin-bottom:7px; cursor:pointer; transition:.14s}
+  #view-desk .home-row:hover{border-color:var(--home-indigo-line); transform:translateX(1px)}
+  #view-desk .home-row.buy{border-left-color:var(--home-buy)}
+  #view-desk .home-row.wait{border-left-color:var(--home-wait)}
+  #view-desk .home-row.avoid{border-left-color:var(--home-avoid)}
+  #view-desk .home-row .tk{font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:500; letter-spacing:.02em; color:var(--home-ink)}
+  #view-desk .home-row .nm{font-size:11px; color:var(--home-faint); margin-top:2px}
+  #view-desk .home-row .px{text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13.5px; color:var(--home-ink)}
+  #view-desk .home-row .chg{text-align:right; font-family:'IBM Plex Mono',monospace; font-size:11px; margin-top:2px}
+  #view-desk .home-row .chg.up{color:var(--home-buy)} #view-desk .home-row .chg.dn{color:var(--home-avoid)}
+  #view-desk .home-row .vd{text-align:right}
+  #view-desk .home-pill{display:inline-block; font-size:10.5px; font-weight:600; padding:3px 9px;
+    border-radius:6px; letter-spacing:.02em}
+  #view-desk .home-pill.buy{background:var(--home-buy-bg); color:var(--home-buy)}
+  #view-desk .home-pill.wait{background:var(--home-wait-bg); color:var(--home-wait)}
+  #view-desk .home-pill.avoid{background:var(--home-avoid-bg); color:var(--home-avoid)}
+  #view-desk .home-conf{display:flex; gap:2.5px; justify-content:flex-end; margin-top:5px}
+  #view-desk .home-conf i{width:11px; height:3px; border-radius:2px; background:var(--home-line); display:block}
+  #view-desk .home-conf i.on{background:var(--home-muted)}
+  #view-desk .home-newflag{display:inline-block; width:5px; height:5px; border-radius:50%;
+    background:var(--home-indigo); vertical-align:middle; margin-left:5px}
+  #view-desk .errline{color:var(--red); font-size:12.5px; padding:6px 4px}
   .jcard{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px}
   .jcard .top{display:flex;justify-content:space-between;font-size:13px;font-weight:700}
   .jcard .meta{color:var(--dim);font-size:12px;margin-top:2px}
@@ -333,13 +382,13 @@
 <aside id="side">
   <div class="brand">Macro App</div>
   <nav>
-    <button data-v="desk" class="on"><span class="ic">✳</span>Desk</button>
+    <button data-v="desk" class="on"><span class="ic">⌕</span>Look up</button>
+    <button data-v="studies"><span class="ic">▦</span>Studies</button>
     <button data-v="journal"><span class="ic">▤</span>Journal</button>
-    <button data-v="studies"><span class="ic">⌕</span>Studies</button>
   </nav>
   <div class="sidefoot">
     <input type="password" id="pass" placeholder="App passphrase">
-    <div class="hint">Stored on this device only. Needed for Desk and Journal.</div>
+    <div class="hint">Stored on this device only. Needed for Look up and Journal.</div>
   </div>
 </aside>
 
@@ -349,52 +398,37 @@
     <input type="password" id="pass-m" placeholder="Passphrase">
   </div>
 
-  <!-- DESK (replaces Chat + Sectors + Size + Macro — Stage B) -->
+  <!-- HOME (replaces Chat + Sectors + Size + Macro — search-first watchlist
+       matching mm-home.html; BUILD.md §4 "App home: NOT chat"). -->
   <div class="view on" id="view-desk">
     <div class="desk-scroll" id="desk-scroll">
-      <div class="card" id="desk-narrative">
-        <div class="sub" id="desk-asof" style="margin-bottom:0">Loading market snapshot…</div>
+      <div class="home-head">
+        <h1>Market Memory</h1>
+        <span class="home-gear">⚙</span>
       </div>
+      <div class="home-date" id="home-date">Loading…</div>
 
-      <div class="card">
-        <h2>Sectors &amp; Size</h2>
-        <div class="sub" id="heat-asof">Ranked by 3-month relative strength vs SPY. Tap a tile for detail.</div>
-        <div class="hlist" id="heat-strip">
-          <div class="hchip skeleton skeleton-card" style="height:54px">&nbsp;</div>
-          <div class="hchip skeleton skeleton-card" style="height:54px">&nbsp;</div>
-          <div class="hchip skeleton skeleton-card" style="height:54px">&nbsp;</div>
+      <div class="home-searchwrap">
+        <div class="home-search">
+          <span class="ic">⌕</span>
+          <input id="home-search" list="ticker-suggest" placeholder="Look up a ticker — try SMH, XLE, IBB"
+            autocomplete="off" spellcheck="false">
         </div>
       </div>
 
-      <details class="card" id="macro-pulse">
-        <summary id="macro-pulse-line">Macro pulse — loading…</summary>
-        <div class="sub" id="hmm-regime" style="display:none;margin-top:8px"></div>
-        <table id="mac-table" style="margin-top:6px">
-          <tr><td class="skeleton skeleton-line" colspan="4">&nbsp;</td></tr>
-        </table>
-        <div id="mac-help" style="margin-top:6px"></div>
-      </details>
+      <div class="home-sect-label">Since yesterday <span class="n" id="home-brief-count"></span></div>
+      <div class="home-brief" id="home-brief">
+        <div class="top"><p>Loading…</p></div>
+      </div>
 
-      <div class="thread" id="thread">
-        <div class="greeting" id="greeting">
-          <h1>What would you like to know?</h1>
-          <p>Answers cite only computed numbers from the evidence engines.<br>
-          Confidence comes from the data — never from vibes.</p>
-        </div>
+      <div class="home-sect-label" style="padding-top:20px">Watchlist</div>
+      <div class="home-thead"><span>Ticker</span><span>Last</span><span>Verdict</span></div>
+      <div class="home-rows" id="home-rows">
+        <div class="home-row skeleton skeleton-card" style="height:54px">&nbsp;</div>
+        <div class="home-row skeleton skeleton-card" style="height:54px">&nbsp;</div>
+        <div class="home-row skeleton skeleton-card" style="height:54px">&nbsp;</div>
       </div>
-    </div>
-    <div class="errline" id="chat-err"></div>
-    <div class="seg" id="scopeToggle">
-      <button class="on" data-scope="markets">Markets</button>
-      <button data-scope="myrecord">My Record</button>
-    </div>
-    <div class="composer">
-      <input id="focus" class="ticker-focus" list="ticker-suggest"
-        placeholder="All assets" autocomplete="off" spellcheck="false">
-      <div class="box">
-        <input id="q" placeholder="Ask about the current setup…" autocomplete="off">
-        <button id="send">Ask</button>
-      </div>
+      <div class="errline" id="home-err"></div>
     </div>
   </div>
 
@@ -498,6 +532,13 @@
       <h2>Completed studies</h2>
       <div id="studies-completed" class="sub">Loading…</div>
     </div>
+
+    <div class="card">
+      <h2>Episode library</h2>
+      <div class="sub" id="ep-lib-sub">Statistical analogs found across every tracked ticker, with the causal
+        narrative (cause / what ended it) once researched via a handoff.</div>
+      <div id="ep-lib-list"><div class="skeleton skeleton-card"></div></div>
+    </div>
   </div>
 
 
@@ -505,14 +546,13 @@
 
 <nav class="bottom-nav" id="bottomNav">
   <div class="row">
-    <button data-v="desk" class="on"><span class="ic">✳</span><span>Desk</span></button>
+    <button data-v="desk" class="on"><span class="ic">⌕</span><span>Look up</span></button>
+    <button data-v="studies"><span class="ic">▦</span><span>Studies</span></button>
     <button data-v="journal"><span class="ic">▤</span><span>Journal</span></button>
-    <button data-v="studies"><span class="ic">⌕</span><span>Studies</span></button>
   </div>
 </nav>
 
 <script>
-const FN_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/smooth-service";
 const fmt = v => (v==null)?"–":(v>0?"+":"")+Number(v).toFixed(1)+"%";
 const cls = v => (v==null)?"":(v>=0?"pos":"neg");
 let ROT=null, SCANNER=null;
@@ -532,15 +572,16 @@ function getPassphrase(){
   return passInputs.map(el=>el.value.trim()).find(Boolean) || localStorage.getItem("pm_pass") || "";
 }
 
-/* nav — 3 destinations (Desk/Journal/Studies), sidebar on desktop, bottom
+/* nav — 3 destinations (Look up/Studies/Journal), sidebar on desktop, bottom
    tab bar on mobile, kept in sync by data-v rather than element identity. */
 function switchView(v){
   document.querySelectorAll("#side nav button, #bottomNav button")
     .forEach(x=>x.classList.toggle("on", x.dataset.v===v));
   document.querySelectorAll(".view").forEach(el=>
     el.classList.toggle("on", el.id === "view-"+v));
+  if(v === "desk") loadHomeWatchlist();
   if(v === "journal"){ loadJournal(); loadScanner(); loadScorecards(); }
-  if(v === "studies") loadCompletedStudies();
+  if(v === "studies"){ loadCompletedStudies(); loadEpisodeLibrary(); }
 }
 document.querySelectorAll("#side nav button, #bottomNav button")
   .forEach(b => b.onclick = () => switchView(b.dataset.v));
@@ -588,19 +629,23 @@ function scrollHost(){
 async function refreshActiveDigests(){
   try{
     const r = await fetch("data/rotation_digest.json",{cache:"no-store"});
-    if(r.ok){ ROT = await r.json(); renderRotation(); }
+    if(r.ok) ROT = await r.json();
   }catch{}
   try{
     const r = await fetch("data/scanner_digest.json",{cache:"no-store"});
-    if(r.ok){ SCANNER = await r.json(); renderNarrativeHeader(); }
+    if(r.ok) SCANNER = await r.json();
   }catch{}
   const onId = document.querySelector(".view.on")?.id;
+  if(onId === "view-desk") loadHomeWatchlist();
   if(onId === "view-journal"){ scannerLoaded = false; loadScanner(); loadJournal(); loadScorecards(); }
-  if(onId === "view-studies"){ studiesLoaded = false; loadCompletedStudies(); }
+  if(onId === "view-studies"){
+    studiesLoaded = false; loadCompletedStudies();
+    episodesLoaded = false; loadEpisodeLibrary();
+  }
 }
 
 /* data */
-// Free-text ticker inputs (Forecast tab + chat focus) share one <datalist>
+// Free-text ticker inputs (Forecast tab + Home search) share one <datalist>
 // of suggestions drawn from every known-universe source. The input itself
 // accepts any ticker — this list is discovery, not a restriction.
 const tickerSuggestSet = new Set();
@@ -620,50 +665,24 @@ function normalizeTickerInput(el){
   el.value = el.value.toUpperCase();
   if(start!=null) el.setSelectionRange(start, end);
 }
-document.getElementById("focus").addEventListener("input", e=>normalizeTickerInput(e.target));
+document.getElementById("home-search").addEventListener("input", e=>normalizeTickerInput(e.target));
 document.getElementById("fc-ticker").addEventListener("input", e=>normalizeTickerInput(e.target));
 
 (async ()=>{
   try{
     const r = await fetch("data/rotation_digest.json",{cache:"no-store"});
-    if(r.ok){ ROT = await r.json(); renderRotation(); }
+    if(r.ok) ROT = await r.json();
   }catch{}
   try{
     const r = await fetch("data/research_digest.json",{cache:"no-store"});
     if(r.ok){ const d = await r.json();
       addTickerSuggestions(Object.entries(d.assets).map(([t,a])=>({ticker:t,label:a.label}))); }
   }catch{}
-  // Scanner digest is fetched here too (not just on Journal open) purely so
-  // the narrative header's setup-count clause has a number on first paint.
   try{
     const r = await fetch("data/scanner_digest.json",{cache:"no-store"});
-    if(r.ok){ SCANNER = await r.json(); renderNarrativeHeader(); }
+    if(r.ok) SCANNER = await r.json();
   }catch{}
 })();
-
-// Sectors + size are one combined heat strip on Desk (Stage B) — ranked by
-// 3m RS vs SPY, colored green/red past a +-5% threshold. Tap opens a bottom
-// sheet with the numeric breakdown (Stage F promotes this to the full
-// shared TearSheet).
-function rsColorClass(v){
-  if(v==null) return "";
-  if(v >= 5) return "chip-good";
-  if(v <= -5) return "chip-bad";
-  return "";
-}
-function renderHeatStrip(){
-  const rows = ROT?.rs_table || [];
-  const el = document.getElementById("heat-strip");
-  document.getElementById("heat-asof").innerHTML = rows.length
-    ? `As of ${esc(ROT.current.as_of)} · ranked by 3-month ${gloss("relative strength")} vs SPY. Tap a tile for detail.`
-    : "No rotation data yet.";
-  el.innerHTML = rows.length ? rows.map(r=>`
-    <div class="hchip chip ${rsColorClass(r["3m"])}" data-ticker="${esc(r.ticker)}" data-label="${esc(r.label||'')}">
-      <div class="hd">${esc(r.ticker)}</div>${fmt(r["3m"])} · 3m
-    </div>`).join("") : `<div class="empty">No rotation data yet.</div>`;
-  el.querySelectorAll(".hchip").forEach(chip => chip.onclick = () =>
-    openTearSheet(chip.dataset.ticker, chip.dataset.label));
-}
 
 /* ==================================================================
    ETF TearSheet (Stage F) — the single shared ticker component. Every
@@ -1342,204 +1361,7 @@ document.getElementById("tearSheetBackdrop").onclick = closeTearSheet;
   });
 })();
 
-// Macro pulse: one collapsed line (VIX / 10Y / HY spread / leadership run
-// age), full table + explainers behind the <details> tap.
-function renderMacroPulse(){
-  const mac = ROT.macro || [];
-  const byKey = k => mac.find(m=>m.key===k);
-  const vix = byKey("VIX"), dgs10 = byKey("DGS10"), hy = byKey("BAMLH0A0HYM2");
-  const rd = ROT.run_durations?.current;
-  const line = [
-    vix ? `VIX ${vix.value}` : null,
-    dgs10 ? `10Y ${dgs10.value}%` : null,
-    hy ? `HY spread ${hy.value}%` : null,
-    rd ? `${rd.label} leading ${rd.age_weeks}w` : null,
-  ].filter(Boolean).join(" · ");
-  document.getElementById("macro-pulse-line").textContent = "Macro pulse — " + (line || "no data yet");
-  document.getElementById("mac-table").innerHTML = mac.length ?
-    `<tr><th>Series</th><th>Value</th><th>3M chg</th><th>1Y chg</th><th>As of</th></tr>`+
-    mac.map(m=>`<tr><td><b>${m.label}</b></td>
-      <td>${m.value}${m.unit}</td>
-      <td>${m.chg_3m==null?"–":(m.chg_3m>0?"+":"")+m.chg_3m}</td>
-      <td>${m.chg_1y==null?"–":(m.chg_1y>0?"+":"")+m.chg_1y}</td>
-      <td style="color:var(--dim)">${m.asof}</td></tr>`).join("")
-    : `<tr><td class="empty">No macro data — rerun the Rotation Engine workflow.</td></tr>`;
-  document.getElementById("mac-help").innerHTML =
-    mac.map(m=>`<details><summary>${m.label}</summary><p>${m.explain}</p></details>`).join("");
-  const hmmEl = document.getElementById("hmm-regime");
-  if(ROT.hmm_regime?.current){
-    const hr = ROT.hmm_regime;
-    hmmEl.style.display = "block";
-    hmmEl.title = hr.note;
-    hmmEl.textContent = `Data-driven comparison (fitted HMM, not a hand rule): `+
-      `${hr.current.state_label} (${Math.round(hr.current.probabilities[hr.current.state_label]*100)}% prob.)`;
-  }
-}
-// Narrative header (Stage E3): 2-3 plain-English sentences built ONLY from
-// named digest fields, zero LLM calls, re-run whenever a digest updates
-// (initial load + pull-to-refresh). Each clause is commented with its
-// source field, per the directive.
-function renderNarrativeHeader(){
-  if(!ROT?.current) return;
-  const sentences = [];
-
-  // Regime clause <- rotation_digest.current.regimes.vix
-  const vix = ROT.current.regimes?.vix;
-  if(vix) sentences.push(`Markets are ${esc(vix)} today.`);
-
-  // Leadership clause <- rotation_digest.current.leadership
-  //                    + rotation_digest.run_durations.current.age_weeks
-  //                    + rotation_digest.run_durations.by_label[label].median_weeks
-  const lead = ROT.current.leadership;
-  const rd = ROT.run_durations;
-  if(lead && rd?.current){
-    const medianWeeks = rd.by_label?.[lead]?.median_weeks;
-    sentences.push(
-      `${esc(lead)} has led for ${rd.current.age_weeks} week${rd.current.age_weeks===1?'':'s'}`+
-      (medianWeeks!=null ? ` — historically these runs lasted ${medianWeeks} weeks at most.` : `.`)
-    );
-  }
-
-  // Setup clause <- scanner_digest.setups.length
-  if(SCANNER){
-    const n = SCANNER.setups?.length || 0;
-    sentences.push(n > 0
-      ? `The scanner sees ${n} ranked setup${n===1?'':'s'} today.`
-      : `No high-confidence setup today.`);
-  }
-
-  document.getElementById("desk-asof").innerHTML =
-    (sentences.length ? sentences.join(" ") : "Loading market snapshot…") +
-    `<br><span style="font-size:11px">As of ${esc(ROT.current.as_of)}</span>`;
-}
-function renderRotation(){
-  renderNarrativeHeader();
-  renderHeatStrip();
-  renderMacroPulse();
-}
-
-/* chat */
-const thread = document.getElementById("thread");
 const esc = s => { const d=document.createElement("div"); d.textContent=s??""; return d.innerHTML; };
-
-function aiCard(d){
-  let h = "";
-  if(d.headline === "Synthesis (unstructured)"){
-    h += `<div class="break" style="margin-bottom:8px;font-weight:600">`+
-      `⚠ The model didn't return a structured synthesis — showing raw output below.</div>`;
-  }
-  h += `<div class="hl">${esc(d.headline||"—")}</div>`;
-  for(const p of d.perspectives||[]){
-    h += `<span class="stance">${esc(p.stance)}</span><p>${esc(p.thesis)||"<em>(no content returned)</em>"}</p>`;
-    if(p.evidence?.length) h += `<div class="klabel">Evidence</div><ul>`+
-      p.evidence.map(e=>`<li>${esc(e)}</li>`).join("")+`</ul>`;
-    if(p.confidence_basis) h += `<div class="klabel">Confidence basis</div><p style="color:var(--dim);font-size:13px">${esc(p.confidence_basis)}</p>`;
-    if(p.what_breaks_it) h += `<div class="klabel">What breaks it</div><p class="break">${esc(p.what_breaks_it)}</p>`;
-  }
-  if(d.tripwires?.length) h += `<div class="klabel">Tripwires</div><ul>`+
-    d.tripwires.map(t=>`<li>${esc(t)}</li>`).join("")+`</ul>`;
-  if(d.analog_map?.rhymes_with) h += `<div class="klabel">Rhymes with</div><p style="color:var(--dim);font-size:13px">${esc(d.analog_map.rhymes_with)}</p>`;
-  if(d.analog_map?.where_it_breaks) h += `<div class="klabel">Where it breaks</div><p style="color:var(--dim);font-size:13px">${esc(d.analog_map.where_it_breaks)}</p>`;
-  if(d.mining_caution) h += `<div class="klabel">Mining caution</div><p style="color:var(--dim);font-size:13px">${esc(d.mining_caution)}</p>`;
-  if(d.sizing_note) h += `<div class="klabel">Sizing arithmetic</div><p style="color:var(--dim);font-size:13px">${esc(d.sizing_note)}</p>`;
-  return h;
-}
-
-// Scope toggle (Stage E2): the toggle is the only router — no auto-routing
-// on question content. Markets -> smooth-service (unchanged). My Record ->
-// mm-search over the user's own forecast/decision history.
-let CHAT_SCOPE = localStorage.getItem("mm_chat_scope") || "markets";
-function applyScopeUI(){
-  document.querySelectorAll("#scopeToggle button").forEach(b=>
-    b.classList.toggle("on", b.dataset.scope===CHAT_SCOPE));
-  document.getElementById("q").placeholder = CHAT_SCOPE==="myrecord"
-    ? "e.g. What did the model say about SMH last month?"
-    : "Ask about the current setup…";
-  document.getElementById("focus").style.display = CHAT_SCOPE==="myrecord" ? "none" : "";
-}
-document.querySelectorAll("#scopeToggle button").forEach(b => b.onclick = () => {
-  CHAT_SCOPE = b.dataset.scope;
-  localStorage.setItem("mm_chat_scope", CHAT_SCOPE);
-  applyScopeUI();
-});
-applyScopeUI();
-
-async function send(){
-  const q = document.getElementById("q").value.trim();
-  const focusEl = document.getElementById("focus");
-  const focus = focusEl.value.trim().toUpperCase();
-  focusEl.value = focus;
-  const pass = getPassphrase();
-  const err = document.getElementById("chat-err");
-  err.textContent = "";
-  if(!q) return;
-  if(!pass){ err.textContent="Set the app passphrase first (top bar on mobile, sidebar on desktop)."; return; }
-  if(CHAT_SCOPE==="markets" && focus && !TICKER_RE.test(focus)){
-    err.textContent = "Focus ticker doesn't look valid — letters only, 1-6 characters (e.g. SMH, BRK.B), or leave it blank for all assets.";
-    return;
-  }
-  document.getElementById("greeting")?.remove();
-  thread.insertAdjacentHTML("beforeend",
-    `<div class="msg user"><div class="bubble">${esc(q)}</div></div>
-     <div class="thinking" id="think">${CHAT_SCOPE==="myrecord" ? "Checking your record…" : "Reading the evidence…"}</div>`);
-  document.getElementById("desk-scroll").scrollTop = document.getElementById("desk-scroll").scrollHeight;
-  document.getElementById("q").value = "";
-  document.getElementById("send").disabled = true;
-  try{
-    if(CHAT_SCOPE === "myrecord"){
-      // Deliberately NOT caught here: a genuine auth/network failure must
-      // surface as a real error below, not get mistaken for "no history yet".
-      const [fRes, dRes] = await Promise.all([
-        mmCall("query_forecasts", {limit:1}),
-        mmCall("query_decisions", {limit:1}),
-      ]);
-      if(!fRes.forecasts?.length && !dRes.decisions?.length){
-        document.getElementById("think").outerHTML =
-          `<div class="msg ai"><div class="bubble">No decisions logged yet — ask a Markets question first.</div></div>`;
-        return;
-      }
-      const r = await fetch(MM_SEARCH_URL, {method:"POST",
-        headers:{"Content-Type":"application/json","x-app-key":pass},
-        body: JSON.stringify({question:q})});
-      const d = await r.json();
-      if(!r.ok || d.error) throw new Error(d.error === "bad passphrase"
-        ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
-        : (d.error||"Request failed") + (d.detail?": "+String(d.detail).slice(0,200):""));
-      document.getElementById("think").outerHTML =
-        `<div class="msg ai"><div class="bubble">${myRecordCard(d)}</div></div>`;
-      return;
-    }
-    const r = await fetch(FN_URL,{method:"POST",
-      headers:{"Content-Type":"application/json","x-app-key":pass},
-      body:JSON.stringify({focus:focus||null,
-        question:q})});
-    const d = await r.json();
-    if(!r.ok||d.error) throw new Error(d.error==="bad passphrase"
-      ? "Passphrase rejected — check the app passphrase vs the Supabase secret."
-      : (d.error||"Request failed") + (d.detail ? ": "+String(d.detail).slice(0,200) : ""));
-    const tsLink = focus ? `<button class="ghost ts-open" data-ticker="${esc(focus)}"
-      style="width:auto;padding:7px 14px;margin-top:8px">View ${esc(focus)} tear sheet →</button>` : "";
-    document.getElementById("think").outerHTML =
-      `<div class="msg ai"><div class="bubble">${aiCard(d)}${tsLink}${focus ? decisionCaptureHTML(focus) : ""}</div></div>`;
-    if(focus){
-      wireDecisionCapture(thread);
-      thread.querySelectorAll(".ts-open").forEach(btn => btn.onclick = () =>
-        openTearSheet(btn.dataset.ticker));
-      // Stage D1: every ranked call surfaced in chat gets graded like any
-      // other forecast — fire-and-forget, never blocks the chat response.
-      mmCall("trigger_forecast", {ticker: focus, source: "chat"}).catch(()=>{});
-    }
-  }catch(e){
-    document.getElementById("think")?.remove();
-    err.textContent = e.message;
-  }finally{
-    document.getElementById("send").disabled = false;
-    document.getElementById("desk-scroll").scrollTop = document.getElementById("desk-scroll").scrollHeight;
-  }
-}
-document.getElementById("send").onclick = send;
-document.getElementById("q").addEventListener("keydown",
-  e=>{ if(e.key==="Enter") send(); });
 
 /* ---------- forecast ---------- */
 const MM_FN_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/mm-journal";
@@ -1631,19 +1453,169 @@ function wireDecisionCapture(root){
   });
 }
 
+// HOME_UNIVERSE doubles as (1) ticker-suggestion source (unchanged) and
+// (2) the Home watchlist's ticker list — every asset that gets a daily
+// forecast run (research assets + rotation sectors/size-style), same
+// merge Python's forecast_engine.load_universe() does. Deduped by ticker
+// since research assets and rotation sectors don't currently overlap but
+// nothing guarantees that stays true.
+let HOME_UNIVERSE = [];
 async function loadUniverse(){
-  // Suggestions only — the Forecast ticker field accepts any yfinance ticker,
-  // not just this configured batch/scanner universe (which stays unchanged).
   try{
     const [u,r] = await Promise.all([
       fetch("scripts/universe_config.json",{cache:"no-store"}).then(x=>x.json()),
       fetch("scripts/rotation_config.json",{cache:"no-store"}).then(x=>x.json()),
     ]);
-    addTickerSuggestions([...u.assets, ...r.sectors, ...r.size_style]
-      .map(a=>({ticker:a.ticker,label:a.label})));
-  }catch(e){ /* suggestions are a nicety — free-text entry still works */ }
+    const seen = new Set();
+    HOME_UNIVERSE = [...u.assets, ...r.sectors, ...r.size_style]
+      .map(a=>({ticker:a.ticker,label:a.label}))
+      .filter(a => seen.has(a.ticker) ? false : (seen.add(a.ticker), true));
+    // Suggestions cover any yfinance ticker — this list is discovery, not a
+    // restriction on what the Forecast ticker field will accept.
+    addTickerSuggestions(HOME_UNIVERSE);
+  }catch(e){ /* watchlist/suggestions degrade to empty — free-text entry still works */ }
+  return HOME_UNIVERSE;
 }
-loadUniverse();
+const universeReady = loadUniverse();
+loadHomeWatchlist(); // Home (desk) is the default-on view at page load
+
+/* ------------------------------------------------------------------
+   Home screen (mm-home.html mockup): search-first watchlist replacing
+   the removed chat Desk (BUILD.md §4 "App home: NOT chat"). Verdict/
+   confidence read the same forecasts.evidence_json.tearsheet_extras.
+   dip_context the TearSheet already uses — duplicated onto every
+   horizon row for a given as_of_ts (forecast_engine.py), so any single
+   row per (ticker, as_of_ts) carries it.
+   ------------------------------------------------------------------ */
+const HOME_CONF_DOTS = {"high":3, "moderate":2, "low / likely mined":1};
+function homeVerdictClass(v){ return v==="BUY"?"buy":v==="AVOID"?"avoid":"wait"; }
+function homeVerdictOf(row){ return row?.evidence_json?.tearsheet_extras?.dip_context?.verdict; }
+
+function homeMarketStatus(){
+  // Approximate: weekday + 9:30-16:00 ET, ignoring holidays/half-days —
+  // a real-time clock check, not a fabricated status.
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone:"America/New_York", weekday:"short", hour:"numeric", minute:"numeric", hour12:false,
+  }).formatToParts(new Date()).reduce((o,p)=>(o[p.type]=p.value,o), {});
+  const isWeekday = !["Sat","Sun"].includes(parts.weekday);
+  const minutesET = Number(parts.hour)*60 + Number(parts.minute);
+  const open = isWeekday && minutesET >= 9*60+30 && minutesET < 16*60;
+  return open ? "MARKETS OPEN" : "MARKETS CLOSED";
+}
+function renderHomeDate(){
+  const d = new Date().toLocaleDateString("en-US", {weekday:"short", month:"short", day:"numeric"})
+    .toUpperCase().replace(",", "");
+  document.getElementById("home-date").textContent = `${d} · ${homeMarketStatus()}`;
+}
+renderHomeDate();
+
+async function loadHomeWatchlist(){
+  const rowsEl = document.getElementById("home-rows");
+  const briefEl = document.getElementById("home-brief");
+  const countEl = document.getElementById("home-brief-count");
+  const errEl = document.getElementById("home-err");
+  errEl.textContent = "";
+  const universe = await universeReady;
+  if(!universe.length){
+    rowsEl.innerHTML = `<div class="empty">No tracked universe configured.</div>`;
+    return;
+  }
+  if(!getPassphrase()){
+    rowsEl.innerHTML = `<div class="empty">Set the app passphrase (sidebar on desktop, top bar on mobile) to load the watchlist.</div>`;
+    briefEl.innerHTML = `<div class="top"><p>Set the app passphrase to see what changed since yesterday.</p></div>`;
+    countEl.textContent = "";
+    return;
+  }
+  let forecasts;
+  try{
+    forecasts = (await mmCall("query_forecasts", {limit:400})).forecasts || [];
+  }catch(e){
+    errEl.textContent = e.message;
+    rowsEl.innerHTML = `<div class="empty">Couldn't load the watchlist.</div>`;
+    return;
+  }
+  const byTicker = new Map();
+  for(const row of forecasts){
+    let g = byTicker.get(row.ticker);
+    if(!g){ g = new Map(); byTicker.set(row.ticker, g); }
+    if(!g.has(row.as_of_ts)) g.set(row.as_of_ts, row);
+  }
+  const entries = universe.map(u => {
+    const g = byTicker.get(u.ticker);
+    if(!g) return {...u, latest:null, prior:null};
+    const stamps = [...g.keys()].sort().reverse();
+    return {...u, latest:g.get(stamps[0]), prior: stamps[1] ? g.get(stamps[1]) : null};
+  });
+  renderHomeBrief(entries, briefEl, countEl);
+  renderHomeRows(entries, rowsEl);
+}
+
+function renderHomeBrief(entries, briefEl, countEl){
+  const tracked = entries.filter(e => e.latest);
+  const flips = tracked.filter(e => e.prior &&
+    homeVerdictOf(e.prior)?.verdict !== homeVerdictOf(e.latest)?.verdict);
+  countEl.textContent = flips.length ? `${flips.length} changed` : "";
+  const summary = flips.length
+    ? `${flips.length} of ${tracked.length} tracked ticker${tracked.length===1?'':'s'} changed verdict since yesterday's batch.`
+    : tracked.length
+      ? `No verdict changes since yesterday's batch — all ${tracked.length} tracked tickers held their prior call.`
+      : `No forecast history yet.`;
+  const flipRows = flips.map(e => {
+    const from = homeVerdictOf(e.prior).verdict, to = homeVerdictOf(e.latest).verdict;
+    return `<div class="home-flip">
+      <span class="tk">${esc(e.ticker)}</span>
+      <span class="from">${esc(from)}</span><span class="arrow">→</span>
+      <span class="to ${homeVerdictClass(to)}">${esc(to)}</span>
+      <span class="why">confidence: ${esc(homeVerdictOf(e.latest).confidence_label||'–')}</span>
+    </div>`;
+  }).join("");
+  briefEl.innerHTML = `<div class="top"><p>${esc(summary)}</p></div>` +
+    (flipRows ? `<div class="home-flips">${flipRows}</div>` : "");
+}
+
+function renderHomeRows(entries, rowsEl){
+  const VERDICT_ORDER = {BUY:0, WAIT:1, AVOID:2};
+  const sorted = [...entries].sort((a,b) => {
+    const va = homeVerdictOf(a.latest)?.verdict, vb = homeVerdictOf(b.latest)?.verdict;
+    const oa = va in VERDICT_ORDER ? VERDICT_ORDER[va] : 3;
+    const ob = vb in VERDICT_ORDER ? VERDICT_ORDER[vb] : 3;
+    return oa !== ob ? oa-ob : a.ticker.localeCompare(b.ticker);
+  });
+  rowsEl.innerHTML = sorted.map(e => {
+    const verdict = homeVerdictOf(e.latest);
+    const vClass = verdict ? homeVerdictClass(verdict.verdict) : "";
+    const price = e.latest?.effective_price;
+    const ret1d = e.latest?.features_json?.query_features?.ret_1d;
+    const flipped = e.prior && verdict && homeVerdictOf(e.prior)?.verdict !== verdict.verdict;
+    const dotN = verdict ? (HOME_CONF_DOTS[verdict.confidence_label] || 0) : 0;
+    return `<div class="home-row ${vClass}" data-ticker="${esc(e.ticker)}" data-label="${esc(e.label||'')}">
+      <div><div class="tk">${esc(e.ticker)}${flipped ? '<span class="home-newflag"></span>' : ''}</div>
+        <div class="nm">${esc(e.label||'')}</div></div>
+      <div><div class="px">${price!=null ? '$'+Number(price).toFixed(2) : '–'}</div>
+        <div class="chg ${ret1d>0?'up':ret1d<0?'dn':''}">${ret1d!=null ? (ret1d>0?'+':'')+(ret1d*100).toFixed(1)+'%' : '–'}</div></div>
+      <div class="vd">${verdict ? `<span class="home-pill ${vClass}">${esc(verdict.verdict)}</span>` : '<span class="home-pill">–</span>'}
+        <div class="home-conf">${[1,2,3].map(i=>`<i class="${i<=dotN?'on':''}"></i>`).join("")}</div></div>
+    </div>`;
+  }).join("") || `<div class="empty">No tracked tickers.</div>`;
+  rowsEl.querySelectorAll(".home-row[data-ticker]").forEach(row => row.onclick = () =>
+    openTearSheet(row.dataset.ticker, row.dataset.label));
+}
+
+function homeSearchGo(){
+  const el = document.getElementById("home-search");
+  const ticker = el.value.trim().toUpperCase();
+  el.value = ticker;
+  const errEl = document.getElementById("home-err");
+  if(!ticker) return;
+  if(!TICKER_RE.test(ticker)){
+    errEl.textContent = "Doesn't look like a valid ticker — letters only, 1-6 characters (e.g. SMH, BRK.B).";
+    return;
+  }
+  errEl.textContent = "";
+  const known = HOME_UNIVERSE.find(u=>u.ticker===ticker);
+  openTearSheet(ticker, known?.label);
+}
+document.getElementById("home-search").addEventListener("keydown", e => { if(e.key==="Enter") homeSearchGo(); });
 
 let fcHorizons = null, fcSelectedHorizon = 5;
 
@@ -2181,19 +2153,6 @@ document.getElementById("reg-submit").onclick = async () => {
   }
 };
 
-/* ---------- my record (mm-search) — rendered inline in the chat thread,
-   same bubble pattern as Markets, when the scope toggle is on My Record */
-const MM_SEARCH_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/mm-search";
-function myRecordCard(d){
-  let h = `<div style="white-space:pre-wrap">${esc(d.answer||"(no answer)")}</div>`;
-  const ev = d.evidence||[];
-  if(ev.length) h += `<div class="klabel">Evidence</div>`+
-    ev.map(e=>`<div class="evidence-item"><div class="tool">${esc(e.tool)}</div>
-      <div class="sub" style="margin-bottom:0">args: ${esc(JSON.stringify(e.args))}</div>
-      <pre>${esc(JSON.stringify(e.result_summary, null, 2))}</pre></div>`).join("");
-  return h;
-}
-
 /* ---------- studies (archive) ---------- */
 let studiesLoaded = false;
 async function loadCompletedStudies(){
@@ -2216,6 +2175,133 @@ async function loadCompletedStudies(){
       <p style="color:var(--dim)">${esc(caveat)}</p>`;
   }catch(e){
     studiesLoaded = false;
+    el.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- episode library (Studies) — browses the flat `episodes`
+   table (BUILD.md §3's growing library), not any one ticker's live
+   "episodes like this" match. Annotation (cause/what_ended_it) reuses
+   the same upsert_episode write-back op the tear sheet's Technicals
+   page already calls; an unannotated row invites that same handoff
+   instead of showing blank fields. */
+let episodesLoaded = false;
+const EPISODE_ROWS = new Map();
+function episodeHandoffPrompt(e){
+  return `My system flagged ${e.event_date} as a ${e.drawdown_pct}% drawdown in ${e.asset} `+
+    `that resolved ${e.fwd_126d_pct!=null ? (e.fwd_126d_pct>0?'+':'')+e.fwd_126d_pct+'%' : 'an unknown amount'} `+
+    `over the following ~126 trading days${e.days_to_trough!=null ? ` (trough ${e.days_to_trough} days in)` : ''}. `+
+    `Research what CAUSED this drawdown and what ENDED it (the catalyst that turned it around). `+
+    `Be concise and cite sources.`;
+}
+function episodeRowHTML(e){
+  const uid = e.asset + "-" + e.event_date;
+  EPISODE_ROWS.set(uid, e);
+  const annotated = !!(e.cause || e.what_ended_it);
+  const stat = e.fwd_126d_pct!=null
+    ? `Resolved ${e.fwd_126d_pct>0?'+':''}${e.fwd_126d_pct}% over 6 months.`
+    : "Resolution not on file.";
+  return `<div class="jcard ep-row" data-uid="${esc(uid)}">
+      <div class="top ep-toggle" style="cursor:pointer">
+        <span>${esc(e.asset)} · ${esc(e.event_date)}</span>
+        <span>${e.drawdown_pct!=null ? e.drawdown_pct+'% drawdown' : ''}</span>
+      </div>
+      <div class="thesis">${stat} ${annotated ? esc(e.cause || 'Annotated — see full detail.') : 'Not yet researched.'}</div>
+      <div class="ep-detail" style="display:none;margin-top:8px">
+        <div class="klabel">Extension above 200d at the time</div>
+        <div class="sub" style="margin-bottom:0">${e.extension_pct!=null?e.extension_pct+'%':'–'}</div>
+        <div class="klabel">Days to trough</div>
+        <div class="sub" style="margin-bottom:0">${e.days_to_trough??'–'}</div>
+        <div class="klabel">What ended it</div>
+        <div class="sub" style="margin-bottom:0">${e.what_ended_it?esc(e.what_ended_it):'Not yet researched.'}</div>
+        <div class="klabel">Source</div>
+        <div class="sub" style="margin-bottom:0">${esc(e.source||'–')}</div>
+        ${!annotated ? `
+        <button class="ghost ep-copy" style="margin-top:8px">⧉ Copy research prompt for Claude</button>
+        <label class="fl">Cause</label>
+        <textarea class="formfield ep-cause" placeholder="What caused this drawdown"></textarea>
+        <label class="fl">What ended it</label>
+        <textarea class="formfield ep-ended" placeholder="What turned it around"></textarea>
+        <button class="ghost ep-save">Save annotation</button>
+        <div class="sub ep-save-status" style="margin-top:4px;margin-bottom:0"></div>` : ""}
+      </div>
+    </div>`;
+}
+function wireEpisodeLibrary(root){
+  root.querySelectorAll(".ep-row").forEach(card => {
+    card.querySelector(".ep-toggle").onclick = () => {
+      const detail = card.querySelector(".ep-detail");
+      detail.style.display = detail.style.display === "none" ? "block" : "none";
+    };
+    const copyBtn = card.querySelector(".ep-copy");
+    if(copyBtn) copyBtn.onclick = async () => {
+      const e = EPISODE_ROWS.get(card.dataset.uid);
+      try{
+        await navigator.clipboard.writeText(episodeHandoffPrompt(e));
+        copyBtn.textContent = "Copied ✓";
+      }catch(err){
+        copyBtn.textContent = "Couldn't copy — clipboard blocked";
+      }
+      setTimeout(()=>{ copyBtn.textContent = "⧉ Copy research prompt for Claude"; }, 2500);
+    };
+    const saveBtn = card.querySelector(".ep-save");
+    if(saveBtn) saveBtn.onclick = async () => {
+      const e = EPISODE_ROWS.get(card.dataset.uid);
+      const cause = card.querySelector(".ep-cause").value.trim();
+      const endedIt = card.querySelector(".ep-ended").value.trim();
+      const status = card.querySelector(".ep-save-status");
+      if(!cause && !endedIt){ status.textContent = "Enter at least one field."; return; }
+      saveBtn.disabled = true; status.textContent = "Saving…";
+      try{
+        await mmCall("upsert_episode", {
+          asset: e.asset, event_date: e.event_date,
+          cause: cause || null, what_ended_it: endedIt || null, source: "handoff",
+        });
+        status.textContent = "Saved — won't need re-researching next time.";
+      }catch(err){
+        status.textContent = err.message;
+      }finally{
+        saveBtn.disabled = false;
+      }
+    };
+  });
+}
+async function loadEpisodeLibrary(){
+  if(episodesLoaded) return;
+  episodesLoaded = true;
+  const el = document.getElementById("ep-lib-list");
+  if(!getPassphrase()){
+    el.innerHTML = `<div class="empty">Set the app passphrase to browse the episode library.</div>`;
+    episodesLoaded = false;
+    return;
+  }
+  try{
+    const universe = await universeReady;
+    // list_episodes is asset-scoped server-side — same contract
+    // episodes.py's own fetch_episode_library() already calls it with
+    // (mm-journal has no "list all" mode) — so the library is one call
+    // per tracked ticker, merged client-side.
+    const results = await Promise.allSettled(
+      universe.map(u => mmCall("list_episodes", {asset: u.ticker})));
+    // Every call rejecting (bad passphrase, network down) is a real error,
+    // not "library is empty" — surface it rather than hiding it behind the
+    // empty-state invite below.
+    if(universe.length && results.every(r => r.status==="rejected")){
+      throw results[0].reason;
+    }
+    const rows = results.flatMap(r => r.status==="fulfilled" ? (r.value.episodes||[]) : []);
+    rows.sort((a,b) => b.event_date.localeCompare(a.event_date));
+    EPISODE_ROWS.clear();
+    if(!rows.length){
+      el.innerHTML = `<div class="empty">No episodes recorded yet — open a ticker's tear sheet
+        (Look up → search a ticker → Technicals tab) and use "Episodes like this" to start
+        finding and annotating analogs.</div>`;
+      return;
+    }
+    el.innerHTML = rows.map(episodeRowHTML).join("");
+    wireEpisodeLibrary(el);
+  }catch(e){
+    episodesLoaded = false;
     el.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
   }
 }

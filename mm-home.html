@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Market Memory · Home</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;450;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  :root{
+    --paper:#fbfbf9; --surface:#ffffff; --raised:#f4f5f3;
+    --line:#e7e8e4; --line-2:#eeefec;
+    --ink:#1c2128; --muted:#5c6470; --faint:#949aa4;
+    --indigo:#4338ca; --indigo-soft:#ecebfb; --indigo-line:#c9c5f2;
+    --accent:#2b6d78;
+    --buy:#3f8f5b; --buy-bg:#edf6f0;
+    --wait:#b0812f; --wait-bg:#faf3e4;
+    --avoid:#c0574f; --avoid-bg:#fbeceb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#e9eae6; color:var(--ink); font-family:'Inter',system-ui,sans-serif;
+    display:flex; align-items:center; justify-content:center; padding:20px; -webkit-font-smoothing:antialiased}
+  .phone{width:390px; height:844px; background:var(--paper); border-radius:44px; overflow:hidden; position:relative;
+    box-shadow:0 30px 80px rgba(40,45,55,.28), 0 0 0 11px #fff, 0 0 0 13px #d7d9d3; display:flex; flex-direction:column}
+  .label{position:absolute; top:-26px; left:50%; transform:translateX(-50%); font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8a9088; letter-spacing:.08em; white-space:nowrap}
+  .status{height:52px; flex:0 0 auto; display:flex; align-items:flex-end; justify-content:space-between; padding:0 28px 6px; font-size:14px; font-weight:600}
+  .status .dots{font-family:'IBM Plex Mono',monospace; letter-spacing:2px; font-size:12px; color:var(--muted)}
+
+  .body{flex:1; overflow-y:auto; padding-bottom:20px}
+  .body::-webkit-scrollbar{display:none}
+
+  /* header */
+  .head{display:flex; align-items:baseline; justify-content:space-between; padding:6px 22px 0}
+  .head h1{font-family:'Fraunces',serif; font-weight:500; font-size:23px; letter-spacing:-.015em}
+  .head .gear{font-size:17px; color:var(--faint); cursor:pointer}
+  .head .date{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--faint); letter-spacing:.04em}
+
+  /* search — the primary action */
+  .searchwrap{padding:16px 18px 6px}
+  .search{display:flex; align-items:center; gap:11px; background:var(--surface);
+    border:1.5px solid var(--indigo); border-radius:15px; padding:15px 17px; box-shadow:0 2px 0 var(--indigo-line)}
+  .search .ic{color:var(--indigo); font-size:16px}
+  .search input{flex:1; border:none; outline:none; font-family:inherit; font-size:15.5px; color:var(--ink); background:transparent}
+  .search input::placeholder{color:var(--faint)}
+
+  /* overnight brief */
+  .sect-label{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); padding:20px 22px 9px; display:flex; align-items:center; gap:8px}
+  .sect-label .n{margin-left:auto; color:var(--indigo); text-transform:none; letter-spacing:0; font-size:10.5px; font-family:'Inter'; font-weight:600}
+
+  .brief{margin:0 18px; background:var(--surface); border:1px solid var(--line); border-radius:15px; overflow:hidden}
+  .brief .top{padding:15px 17px 13px}
+  .brief .top p{font-size:14px; line-height:1.55; color:var(--ink)}
+  .brief .top p b{font-weight:600}
+  .flips{border-top:1px solid var(--line-2); background:var(--raised)}
+  .flip{display:flex; align-items:center; gap:10px; padding:11px 17px; border-bottom:1px solid var(--line-2); font-size:13px}
+  .flip:last-child{border-bottom:none}
+  .flip .tk{font-family:'IBM Plex Mono',monospace; font-weight:500; width:52px; font-size:12.5px}
+  .flip .arrow{color:var(--faint); font-size:11px}
+  .flip .from{color:var(--faint); font-size:12px}
+  .flip .to{font-weight:600; font-size:12.5px}
+  .flip .to.buy{color:var(--buy)} .flip .to.wait{color:var(--wait)} .flip .to.avoid{color:var(--avoid)}
+  .flip .why{margin-left:auto; color:var(--muted); font-size:11.5px}
+
+  /* watchlist table */
+  .thead{display:grid; grid-template-columns:1fr 78px 70px; gap:8px; padding:0 22px 7px;
+    font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
+  .thead span:nth-child(2),.thead span:nth-child(3){text-align:right}
+
+  .rows{padding:0 18px}
+  .row{display:grid; grid-template-columns:1fr 78px 70px; gap:8px; align-items:center;
+    background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--line);
+    border-radius:12px; padding:13px 14px; margin-bottom:7px; cursor:pointer; transition:.14s}
+  .row:hover{border-color:var(--indigo-line); transform:translateX(1px)}
+  .row.buy{border-left-color:var(--buy)} .row.wait{border-left-color:var(--wait)} .row.avoid{border-left-color:var(--avoid)}
+  .row .tk{font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:500; letter-spacing:.02em}
+  .row .nm{font-size:11px; color:var(--faint); margin-top:2px}
+  .row .px{text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13.5px}
+  .row .chg{text-align:right; font-family:'IBM Plex Mono',monospace; font-size:11px; margin-top:2px}
+  .chg.up{color:var(--buy)} .chg.dn{color:var(--avoid)}
+  .row .vd{text-align:right}
+  .pill{display:inline-block; font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:6px; letter-spacing:.02em}
+  .pill.buy{background:var(--buy-bg); color:var(--buy)}
+  .pill.wait{background:var(--wait-bg); color:var(--wait)}
+  .pill.avoid{background:var(--avoid-bg); color:var(--avoid)}
+  .conf{display:flex; gap:2.5px; justify-content:flex-end; margin-top:5px}
+  .conf i{width:11px; height:3px; border-radius:2px; background:var(--line)}
+  .conf i.on{background:var(--muted)}
+  .newflag{display:inline-block; width:5px; height:5px; border-radius:50%; background:var(--indigo); vertical-align:middle; margin-left:5px}
+
+  /* tabs */
+  .tabs{flex:0 0 auto; display:flex; border-top:1px solid var(--line); background:var(--paper); padding:9px 0 calc(8px + env(safe-area-inset-bottom))}
+  .tab{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:10px; color:var(--faint); cursor:pointer}
+  .tab.active{color:var(--indigo)}
+  .tab .ic{font-size:16px}
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="label">HOME — search first · overnight flips · watchlist table</div>
+  <div class="status"><span>9:41</span><span class="dots">●●● ᯤ ▮</span></div>
+
+  <div class="body">
+    <div class="head">
+      <h1>Market Memory</h1>
+      <span class="gear">⚙</span>
+    </div>
+    <div style="padding:2px 22px 0"><span class="date">SAT JUL 18 · MARKETS CLOSED</span></div>
+
+    <div class="searchwrap">
+      <div class="search">
+        <span class="ic">⌕</span>
+        <input placeholder="Look up a ticker — try SMH, XLE, IBB">
+      </div>
+    </div>
+
+    <div class="sect-label">Since yesterday <span class="n">2 changed</span></div>
+    <div class="brief">
+      <div class="top">
+        <p>Semis stabilized on heavy volume — <b>SMH</b> and <b>DRAM</b> both reclaimed after morning flushes. Nothing else in your list moved more than 1%.</p>
+      </div>
+      <div class="flips">
+        <div class="flip">
+          <span class="tk">SMH</span>
+          <span class="from">Avoid</span><span class="arrow">→</span><span class="to wait">Wait</span>
+          <span class="why">volume confirmed</span>
+        </div>
+        <div class="flip">
+          <span class="tk">XLE</span>
+          <span class="from">Wait</span><span class="arrow">→</span><span class="to buy">Buy</span>
+          <span class="why">stretch reverted</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sect-label">Watchlist</div>
+    <div class="thead"><span>Ticker</span><span>Last</span><span>Verdict</span></div>
+    <div class="rows">
+
+      <div class="row wait">
+        <div><div class="tk">SMH<span class="newflag"></span></div><div class="nm">VanEck Semiconductor</div></div>
+        <div><div class="px">550.61</div><div class="chg dn">−3.2%</div></div>
+        <div class="vd"><span class="pill wait">Wait</span><div class="conf"><i class="on"></i><i class="on"></i><i></i></div></div>
+      </div>
+
+      <div class="row wait">
+        <div><div class="tk">DRAM</div><div class="nm">Roundhill Memory</div></div>
+        <div><div class="px">53.79</div><div class="chg up">+2.8%</div></div>
+        <div class="vd"><span class="pill wait">Wait</span><div class="conf"><i class="on"></i><i class="on"></i><i></i></div></div>
+      </div>
+
+      <div class="row buy">
+        <div><div class="tk">XLE<span class="newflag"></span></div><div class="nm">Energy Select Sector</div></div>
+        <div><div class="px">98.24</div><div class="chg up">+1.1%</div></div>
+        <div class="vd"><span class="pill buy">Buy</span><div class="conf"><i class="on"></i><i class="on"></i><i class="on"></i></div></div>
+      </div>
+
+      <div class="row avoid">
+        <div><div class="tk">XBI</div><div class="nm">SPDR S&amp;P Biotech</div></div>
+        <div><div class="px">157.40</div><div class="chg dn">−0.8%</div></div>
+        <div class="vd"><span class="pill avoid">Avoid</span><div class="conf"><i class="on"></i><i class="on"></i><i></i></div></div>
+      </div>
+
+      <div class="row wait">
+        <div><div class="tk">EWT</div><div class="nm">iShares Taiwan</div></div>
+        <div><div class="px">72.15</div><div class="chg dn">−0.4%</div></div>
+        <div class="vd"><span class="pill wait">Wait</span><div class="conf"><i class="on"></i><i></i><i></i></div></div>
+      </div>
+
+      <div class="row buy">
+        <div><div class="tk">RSP</div><div class="nm">Invesco Equal Weight</div></div>
+        <div><div class="px">201.88</div><div class="chg up">+0.2%</div></div>
+        <div class="vd"><span class="pill buy">Buy</span><div class="conf"><i class="on"></i><i class="on"></i><i></i></div></div>
+      </div>
+
+      <div class="row wait">
+        <div><div class="tk">KRE</div><div class="nm">SPDR Regional Banking</div></div>
+        <div><div class="px">64.02</div><div class="chg up">+0.9%</div></div>
+        <div class="vd"><span class="pill wait">Wait</span><div class="conf"><i class="on"></i><i></i><i></i></div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active"><span class="ic">⌕</span>Look up</div>
+    <div class="tab"><span class="ic">▤</span>Journal</div>
+  </div>
+</div>
+</body>
+</html>

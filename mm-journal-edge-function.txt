@@ -67,6 +67,8 @@ const REQUIRED_FIELDS: Record<string, string[]> = {
   get_calibration_data: [],
   create_registry_entry: ["model_version", "status"],
   list_registry_entries: [],
+  list_episodes: ["asset"],
+  upsert_episode: ["asset", "event_date"],
 };
 
 const GITHUB_REPO = "Bollywood16/Macro-App";
@@ -330,6 +332,24 @@ Deno.serve(async (req) => {
           .limit(limit);
         if (error) throw error;
         return json({ entries: data });
+      }
+
+      case "list_episodes": {
+        const { data, error } = await supabase
+          .from("episodes").select("*")
+          .eq("asset", payload.asset)
+          .order("event_date", { ascending: false });
+        if (error) throw error;
+        return json({ episodes: data });
+      }
+
+      case "upsert_episode": {
+        const { data, error } = await supabase
+          .from("episodes")
+          .upsert(payload, { onConflict: "asset,event_date" })
+          .select().single();
+        if (error) throw error;
+        return json({ episode: data });
       }
 
       default:

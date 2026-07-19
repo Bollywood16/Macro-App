@@ -375,9 +375,9 @@ def analog_positions(X: np.ndarray, query_pos: int):
 
 
 def horizon_stats(close: pd.Series, spy_close_aligned: pd.Series, positions,
-                   horizon):
+                   horizon, regime_tuples=None):
     n = len(close)
-    rets, excess, mae = [], [], []
+    rets, excess, mae, used_pos = [], [], [], []
     for pos in positions:
         end = pos + horizon
         if end >= n:
@@ -389,12 +389,24 @@ def horizon_stats(close: pd.Series, spy_close_aligned: pd.Series, positions,
         ret = float(window.iloc[-1])
         rets.append(ret)
         mae.append(float(window.min()))
+        used_pos.append(pos)
         se, ee = spy_close_aligned.iloc[pos], spy_close_aligned.iloc[end]
         if pd.notna(se) and pd.notna(ee) and se > 0:
             excess.append(ret - float(ee / se - 1))
     if not rets:
         return None
     s = pd.Series(rets)
+    # REFINEMENT.md §3: n alone hides sample bias — a base rate built
+    # entirely from one market regime/date window looks identical to a
+    # broad, well-diversified one unless the episode dates and regime
+    # diversity ride along with it. Cheap to compute (positions are
+    # already in hand here), so it goes on every horizon row rather than
+    # being bolted on separately.
+    episode_dates = [close.index[p] for p in used_pos]
+    date_start = min(episode_dates).date().isoformat() if episode_dates else None
+    date_end = max(episode_dates).date().isoformat() if episode_dates else None
+    distinct_regimes = (len({regime_tuples[p] for p in used_pos})
+                         if regime_tuples is not None and used_pos else None)
     return {
         "n": len(rets),
         "p_positive": round(float((s > 0).mean()), 4),
@@ -406,14 +418,35 @@ def horizon_stats(close: pd.Series, spy_close_aligned: pd.Series, positions,
         "expected_mae": round(float(np.mean(mae)), 4),
         "mean_excess_return": (round(float(np.mean(excess)), 4)
                                 if excess else None),
+        "date_start": date_start,
+        "date_end": date_end,
+        "distinct_regimes": distinct_regimes,
     }
 
 
 # --------------------------------------------------------- confidence etc.
 
 
+def sample_is_concentrated(ens):
+    """REFINEMENT.md §3: a base rate drawn from a single market regime or a
+    narrow date window reads identically to a diversified one unless this is
+    checked explicitly. `ens` is a horizon_stats() dict (or None)."""
+    if not ens:
+        return False
+    distinct = ens.get("distinct_regimes")
+    if distinct is not None and distinct < 2:
+        return True
+    ds, de = ens.get("date_start"), ens.get("date_end")
+    if ds and de:
+        span_days = (datetime.fromisoformat(de) - datetime.fromisoformat(ds)).days
+        if span_days < 365:
+            return True
+    return False
+
+
 def compute_confidence(n, p_positive, analog_p, regime_p, analog_density,
-                        distribution_shift, intraday_proxy, regime_unknown):
+                        distribution_shift, intraday_proxy, regime_unknown,
+                        concentrated=False):
     sample_quality = min(1.0, n / 40.0)
     consistency = max(p_positive, 1 - p_positive)
     if analog_p is not None and regime_p is not None:
@@ -423,12 +456,19 @@ def compute_confidence(n, p_positive, analog_p, regime_p, analog_density,
     data_quality_penalty = 0.1 if regime_unknown else 0.0
     distribution_shift_penalty = 0.15 if distribution_shift else 0.0
     intraday_penalty = INTRADAY_CONFIDENCE_DISCOUNT if intraday_proxy else 0.0
+    concentration_penalty = 0.20 if concentrated else 0.0
 
     score = (100 * sample_quality * consistency * agreement * analog_density
               - 100 * (data_quality_penalty + distribution_shift_penalty
-                        + intraday_penalty))
+                        + intraday_penalty + concentration_penalty))
     score = max(0, min(100, round(score)))
     label = "high" if score >= 70 else ("moderate" if score >= 40 else "low")
+    # Belt-and-suspenders on top of the numeric penalty above: a sample
+    # drawn from one regime/date window must never present as "high"
+    # confidence, however internally consistent it looks (spec 4.3 /
+    # REFINEMENT.md §3 — "cannot render as high confidence").
+    if concentrated and label == "high":
+        label = "moderate"
     return score / 100.0, label
 
 
@@ -681,19 +721,21 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
 
     horizon_rows = {}
     for h in HORIZONS:
-        ens = horizon_stats(close, spy_close_run, ensemble_pos, h)
-        analog_h = horizon_stats(close, spy_close_run, analog_pos, h)
-        regime_h = horizon_stats(close, spy_close_run, regime_pos, h)
+        ens = horizon_stats(close, spy_close_run, ensemble_pos, h, regime_tuples)
+        analog_h = horizon_stats(close, spy_close_run, analog_pos, h, regime_tuples)
+        regime_h = horizon_stats(close, spy_close_run, regime_pos, h, regime_tuples)
         horizon_rows[h] = {"ensemble": ens, "analog": analog_h, "regime": regime_h}
 
     primary = horizon_rows.get(5) or horizon_rows.get(HORIZONS[0])
     ens5 = primary["ensemble"]
+    primary_concentrated = sample_is_concentrated(ens5)
     if ens5:
         conf_score, conf_label = compute_confidence(
             ens5["n"], ens5["p_positive"],
             (primary["analog"] or {}).get("p_positive"),
             (primary["regime"] or {}).get("p_positive"),
-            analog_density, distribution_shift, intraday_proxy, regime_unknown)
+            analog_density, distribution_shift, intraday_proxy, regime_unknown,
+            primary_concentrated)
         rec_label = recommendation_label(ens5["n"], conf_label,
                                           ens5["p_positive"], ens5["expected_mae"])
     else:
@@ -712,6 +754,26 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
     if distribution_shift:
         warnings.append("Current feature vector is out-of-distribution "
                          "versus this ticker's own history.")
+
+    # REFINEMENT.md §3: ticker-level (same across every horizon row, like
+    # tearsheet_extras below) so the strip can show one banner rather than
+    # one per horizon chip.
+    sample_concentration = {"concentrated": primary_concentrated}
+    if ens5:
+        sample_concentration.update({
+            "distinct_regimes": ens5.get("distinct_regimes"),
+            "date_start": ens5.get("date_start"),
+            "date_end": ens5.get("date_end"),
+        })
+    if primary_concentrated and ens5 and ens5.get("date_start") and ens5.get("date_end"):
+        y0 = ens5["date_start"][:4]
+        y1 = ens5["date_end"][:4]
+        date_range = y0 if y0 == y1 else f"{y0}–{y1}"
+        sample_concentration["warning"] = (
+            f"These odds are drawn mostly from {date_range} — a single "
+            "market regime. Treat as regime-specific, not a general rule.")
+    else:
+        sample_concentration["warning"] = None
 
     features_json = {
         "as_of": as_of.isoformat(),
@@ -734,12 +796,14 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
     created_forecast_ids = []
     for h in HORIZONS:
         ens = horizon_rows[h]["ensemble"]
+        concentrated_h = sample_is_concentrated(ens)
         if ens:
             conf_h, conf_label_h = compute_confidence(
                 ens["n"], ens["p_positive"],
                 (horizon_rows[h]["analog"] or {}).get("p_positive"),
                 (horizon_rows[h]["regime"] or {}).get("p_positive"),
-                analog_density, distribution_shift, intraday_proxy, regime_unknown)
+                analog_density, distribution_shift, intraday_proxy, regime_unknown,
+                concentrated_h)
         else:
             conf_h, conf_label_h = 0.0, "low"
 
@@ -776,6 +840,20 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
                 "analog": horizon_rows[h]["analog"],
                 "regime_base_rate": horizon_rows[h]["regime"],
             },
+            # REFINEMENT.md §3: this horizon's own sample footprint — n
+            # already exists as n_independent at the payload's top level,
+            # date range/regime diversity/concentration live here since
+            # they're new and don't warrant a forecasts-table migration.
+            "sample_size": {
+                "n": ens["n"] if ens else 0,
+                "date_start": ens.get("date_start") if ens else None,
+                "date_end": ens.get("date_end") if ens else None,
+                "distinct_regimes": ens.get("distinct_regimes") if ens else None,
+                "concentrated": concentrated_h,
+            },
+            # Ticker-level (not horizon-specific) — same primary-horizon
+            # read on every row, for the one-line banner above the strip.
+            "sample_concentration": sample_concentration,
             # BUILD.md tear-sheet engines: ticker-level (not horizon-
             # specific), duplicated onto every horizon row the same way
             # why_it_triggered/warnings/sub_models already are above, so

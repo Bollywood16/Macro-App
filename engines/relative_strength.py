@@ -17,10 +17,27 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-WINDOWS = [20, 50, 100, 200]         # rolling lookbacks (trading days)
+# REFINEMENT.md §4: 5d/10d added as "near term" (timing-relevant) alongside
+# the original 20/50/100/200 "positioning" (multi-month) windows. Grouped
+# explicitly (NEAR_TERM_WINDOWS/POSITIONING_WINDOWS) rather than just
+# prepended, so both the UI and _reversal_signal() below can tell which
+# bucket a window belongs to without re-deriving it from a magic number.
+NEAR_TERM_WINDOWS = [5, 10]
+POSITIONING_WINDOWS = [20, 50, 100, 200]
+WINDOWS = NEAR_TERM_WINDOWS + POSITIONING_WINDOWS
 RESOLVE_HORIZON = 40                 # ~8 weeks: how we measure "reverted"
 EXTREME_PCTILE = 90                  # |pctile-50|*2 >= this => flag
 EPISODE_SPACING = 40                 # independence spacing for resolution stats
+# Near-term windows mean-revert faster and a "hot" 5/10d reading is a much
+# more common (noisier) event than a "hot" 100/200d one at the same nominal
+# percentile threshold — so a near-term extreme gets a flat confidence
+# haircut rather than trusting the raw sample-size formula to catch it.
+NEAR_TERM_CONFIDENCE_DISCOUNT = 0.7
+# How stretched the positioning window must be, and how far the near-term
+# window must have already faded, before we call it "reversion underway"
+# rather than noise.
+REVERSAL_POSITIONING_PCTILE = 80
+REVERSAL_NEAR_TERM_PCTILE = 40
 
 
 def _log_rel(a: pd.Series, b: pd.Series) -> pd.Series:
@@ -76,6 +93,14 @@ def _resolution(rel_ret: pd.Series, window: int):
     }
 
 
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def _label(pct):
     if pct is None:
         return "insufficient_history"
@@ -83,6 +108,33 @@ def _label(pct):
     if pct >= 50:
         return "hot" if ext >= EXTREME_PCTILE else ("warm" if ext >= 60 else "normal")
     return "cooling" if ext >= 60 else "normal"
+
+
+def _reversal_signal(rows, flagged):
+    """REFINEMENT.md §4: the near-term rows are what tell the user whether a
+    snap-back has already started. If the flagged (most stretched) reading
+    is a positioning-horizon extreme, but this same ticker-vs-benchmark pair
+    has already faded on the shortest available near-term window, surface
+    that contrast explicitly rather than leaving it to be spotted in a list."""
+    if not flagged or flagged["window"] not in POSITIONING_WINDOWS:
+        return None
+    near = sorted((r for r in rows if r["vs"] == flagged["vs"]
+                   and r["window"] in NEAR_TERM_WINDOWS
+                   and r["pctile"] is not None),
+                  key=lambda r: r["window"])
+    if not near or flagged["pctile"] is None:
+        return None
+    nr = near[0]
+    if (flagged["pctile"] >= REVERSAL_POSITIONING_PCTILE
+            and nr["pctile"] <= REVERSAL_NEAR_TERM_PCTILE):
+        return {
+            "vs": flagged["vs"],
+            "positioning_window": flagged["window"], "positioning_pctile": flagged["pctile"],
+            "positioning_z": flagged["z"],
+            "near_term_window": nr["window"], "near_term_pctile": nr["pctile"],
+            "near_term_z": nr["z"],
+        }
+    return None
 
 
 def relative_strength(prices: dict[str, pd.Series], ticker: str,
@@ -102,7 +154,8 @@ def relative_strength(prices: dict[str, pd.Series], ticker: str,
             pct, z = _pctile_and_z(rr)
             lab = _label(pct)
             row = {"vs": label, "symbol": sym, "window": w,
-                   "pctile": pct, "z": z, "state": lab}
+                   "pctile": pct, "z": z, "state": lab,
+                   "group": "near_term" if w in NEAR_TERM_WINDOWS else "positioning"}
             if lab == "hot":
                 res = _resolution(rr, w)
                 row["resolution"] = res
@@ -111,14 +164,22 @@ def relative_strength(prices: dict[str, pd.Series], ticker: str,
                     flagged = row
             rows.append(row)
 
-    # confidence for the flagged extreme: sample size of its resolution set
+    # confidence for the flagged extreme: sample size of its resolution set,
+    # discounted when the extreme itself is a near-term (5d/10d) reading —
+    # REFINEMENT.md §4: those mean-revert faster and are noisier by
+    # construction, so the same nominal sample-size score overstates them.
     conf = {"score": 0, "label": "no data"}
     if flagged and flagged.get("resolution", {}).get("n"):
         n = flagged["resolution"]["n"]
-        score = min(100, round(100 * min(1.0, n / 12) *
-                    (0.5 + 0.5 * abs((flagged["resolution"]["pct_reverted"] - 50) / 50))))
+        score = 100 * min(1.0, n / 12) * (
+            0.5 + 0.5 * abs((flagged["resolution"]["pct_reverted"] - 50) / 50))
+        if flagged["window"] in NEAR_TERM_WINDOWS:
+            score *= NEAR_TERM_CONFIDENCE_DISCOUNT
+        score = min(100, round(score))
         conf = {"score": score,
                 "label": "high" if score >= 70 else "moderate" if score >= 45 else "low"}
+
+    reversal = _reversal_signal(rows, flagged)
 
     plain = []
     if flagged:
@@ -126,6 +187,10 @@ def relative_strength(prices: dict[str, pd.Series], ticker: str,
         plain.append(
             f"{ticker} has outrun {flagged['vs']} over {flagged['window']} days more than "
             f"~{flagged['pctile']:.0f}% of its own history — a stretched reading.")
+        if flagged["window"] in NEAR_TERM_WINDOWS:
+            plain.append(
+                "This is a near-term (1-2 week) reading — it mean-reverts faster and is "
+                "noisier than a multi-month stretch, so weight it accordingly.")
         if r.get("n"):
             plain.append(
                 f"The last {r['n']} times it got this stretched, it narrowed within ~8 weeks "
@@ -133,7 +198,19 @@ def relative_strength(prices: dict[str, pd.Series], ticker: str,
     else:
         plain.append(f"{ticker} is not at a relative-performance extreme versus its benchmarks right now.")
 
+    if reversal:
+        # Authored once here (Python computes, UI only interprets — see
+        # module docstring) so the on-screen callout and the copy-for-Claude
+        # handoff bundle never drift into two different tellings of the
+        # same signal.
+        reversal["plain"] = (
+            f"But the {reversal['near_term_window']}-day reading vs {reversal['vs']} has already "
+            f"faded to the {_ordinal(round(reversal['near_term_pctile']))} percentile — the "
+            "snap-back may already be underway rather than still ahead of you.")
+        plain.append(reversal["plain"])
+
     return {
         "ticker": ticker, "flagged": flagged, "confidence": conf,
-        "rows": rows, "plain": plain,
+        "rows": rows, "plain": plain, "reversal_signal": reversal,
+        "near_term_windows": NEAR_TERM_WINDOWS, "positioning_windows": POSITIONING_WINDOWS,
     }

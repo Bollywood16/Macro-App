@@ -146,6 +146,14 @@
     box-shadow:0 0 7px var(--ts-buy)}
   #tearSheet .ts-asof b{color:var(--ts-ink); font-weight:500}
   #tearSheet .ts-asof .delay{margin-left:auto; color:var(--ts-faint)}
+  #tearSheet .ts-asof.stale{color:var(--ts-avoid)}
+  #tearSheet .ts-asof.stale b{color:var(--ts-avoid)}
+  #tearSheet .ts-asof.stale .live{background:var(--ts-faint); box-shadow:none}
+  #tearSheet .ts-asof.stale .delay{margin-left:0; color:var(--ts-avoid)}
+  #tearSheet .ts-asof-refresh{margin-left:auto; font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+    font-weight:600; color:var(--ts-indigo); background:none; border:1px solid var(--ts-indigo-line);
+    border-radius:7px; padding:3px 9px; cursor:pointer}
+  #tearSheet.stale .ts-section, #tearSheet.stale .ts-verdict{opacity:.55}
   #tearSheet .ts-tabs{display:flex; gap:6px; padding:10px 12px 4px}
   #tearSheet .ts-tab{flex:1; text-align:center; padding:9px; font-size:12.5px; font-weight:500;
     color:var(--ts-muted); background:var(--ts-surface); border:1px solid var(--ts-line);
@@ -220,11 +228,62 @@
   #tearSheet .ts-mc-stat b{font-family:'Fraunces',serif; font-size:21px; font-weight:600; display:block; line-height:1}
   #tearSheet .ts-mc-stat.good b{color:var(--ts-buy)} #tearSheet .ts-mc-stat.risk b{color:var(--ts-avoid)}
   #tearSheet .ts-mc-stat span{font-size:10px; color:var(--ts-muted); display:block; margin-top:5px; line-height:1.3}
+  #tearSheet .ts-mc-explainer{margin-top:10px; padding:11px 13px; background:var(--ts-surface);
+    border:1px solid var(--ts-line); border-radius:12px; cursor:pointer}
+  #tearSheet .ts-mc-explainer p{font-size:12.5px; line-height:1.55; color:var(--ts-ink); margin:0}
+  #tearSheet .ts-mc-explainer .aff{display:flex; align-items:center; gap:5px; margin-top:8px;
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.06em; color:var(--ts-indigo)}
+  #tearSheet .ts-mc-explainer .aff .chev{transition:transform .15s}
+  #tearSheet .ts-mc-explainer.open .aff .chev{transform:rotate(90deg)}
+  #tearSheet .ts-mc-drawer{display:none; margin-top:10px; padding:12px 13px; background:var(--ts-raised);
+    border:1px solid var(--ts-line); border-radius:12px; font-size:12px; color:var(--ts-muted)}
+  #tearSheet .ts-mc-drawer.open{display:block}
+  #tearSheet .ts-mc-drawer .row{display:flex; justify-content:space-between; gap:10px; padding:5px 0;
+    border-bottom:1px solid var(--ts-line-2)}
+  #tearSheet .ts-mc-drawer .row:last-of-type{border-bottom:none}
+  #tearSheet .ts-mc-drawer .row .k{color:var(--ts-faint)}
+  #tearSheet .ts-mc-drawer .row .v{font-family:'IBM Plex Mono',monospace; color:var(--ts-ink); text-align:right}
+  #tearSheet .ts-mc-drawer .eplabel{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ts-faint); margin:8px 0 6px}
+  #tearSheet .ts-mc-eplist{display:flex; flex-wrap:wrap; gap:5px; max-height:110px; overflow-y:auto}
+  #tearSheet .ts-mc-epchip{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ts-muted);
+    background:var(--ts-surface); border:1px solid var(--ts-line); border-radius:6px; padding:2px 6px}
+  #tearSheet .ts-mc-slider-wrap{padding-bottom:10px; margin-bottom:8px; border-bottom:1px dashed var(--ts-line)}
+  #tearSheet .ts-mc-slider-wrap .row{border-bottom:none; padding:0 0 6px}
+  #tearSheet .ts-mc-slider-wrap .tag{font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--ts-indigo); background:var(--ts-indigo-line); border-radius:5px;
+    padding:1px 5px; margin-left:6px}
+  #tearSheet .ts-mc-slider-wrap input[type=range]{width:100%; accent-color:var(--ts-indigo); cursor:pointer}
+  #tearSheet .ts-mc-slider-wrap .hint{font-size:10.5px; color:var(--ts-faint); margin-top:4px; line-height:1.4}
+  #tearSheet .ts-mc-slider-wrap .reset{margin-left:8px; color:var(--ts-indigo); font-weight:600; cursor:pointer;
+    text-decoration:underline}
+  #tearSheet .ts-mc-ladder{margin-top:10px; padding:11px 13px; background:var(--ts-surface);
+    border:1px solid var(--ts-line); border-radius:12px}
+  #tearSheet .ts-mc-ladder .lbl{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ts-faint); margin-bottom:7px}
+  #tearSheet .ts-mc-ladder .r{display:flex; align-items:baseline; gap:8px; padding:4px 0}
+  #tearSheet .ts-mc-ladder .r .tr{font-size:12.5px; color:var(--ts-ink); flex:1}
+  #tearSheet .ts-mc-ladder .r .px{font-family:'IBM Plex Mono',monospace; font-size:13.5px; font-weight:600; color:var(--ts-indigo)}
+  #tearSheet .ts-mc-ladder .r .pctl{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--ts-faint)}
+  #tearSheet .ts-mc-tail-dollars{margin-top:10px; padding:11px 13px; background:var(--ts-avoid-bg);
+    border:1px solid #f0d5d2; border-radius:12px}
+  #tearSheet .ts-mc-tail-dollars p{font-size:12.5px; line-height:1.5; color:var(--ts-ink); margin:0}
+  #tearSheet .ts-mc-tail-dollars p b{color:var(--ts-avoid)}
+  #tearSheet .ts-mc-tail-dollars .edit{display:inline-block; margin-top:7px; font-size:11px;
+    color:var(--ts-indigo); font-weight:600; cursor:pointer; text-decoration:underline}
+  #tearSheet .ts-mc-tail-dollars .edit-row{display:flex; gap:8px; margin-top:8px}
+  #tearSheet .ts-mc-tail-dollars input[type=number]{flex:1; border:1px solid var(--ts-line);
+    border-radius:8px; padding:8px 10px; font-size:13px; background:var(--ts-surface); color:var(--ts-ink)}
+  #tearSheet .ts-mc-tail-dollars .save{border:none; border-radius:8px; padding:8px 14px;
+    background:var(--ts-indigo); color:#fff; font-size:12.5px; font-weight:600; cursor:pointer}
   #tearSheet .ts-fc-row{display:grid; grid-template-columns:50px 1fr 46px; align-items:center; gap:10px;
     padding:9px 0; border-bottom:1px solid var(--ts-line-2)}
   #tearSheet .ts-fc-row:last-child{border-bottom:none}
   #tearSheet .ts-fc-h{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ts-muted)}
   #tearSheet .ts-fc-txt{font-size:13px} #tearSheet .ts-fc-txt b{font-weight:600}
+  #tearSheet .ts-fc-sample{display:block; font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+    color:var(--ts-faint); margin-top:1px}
+  #tearSheet .ts-fc-sample.concentrated{color:var(--ts-avoid)}
   #tearSheet .ts-fc-bar{width:40px; height:4px; border-radius:2px; background:var(--ts-raised);
     overflow:hidden; justify-self:end}
   #tearSheet .ts-fc-bar i{display:block; height:100%; border-radius:2px}
@@ -261,8 +320,11 @@
   #tearSheet .ts-ep-row .hd b{font-weight:600}
   #tearSheet .ts-ep-row p{font-size:12.5px; color:var(--ts-muted); margin-top:5px; line-height:1.5}
   #tearSheet .ts-rsgrid{display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; font-size:12.5px}
+  #tearSheet .ts-rsgrid.compact{margin-bottom:10px; padding-bottom:10px; border-bottom:1px dashed var(--ts-line)}
   #tearSheet .ts-rsgrid .k{color:var(--ts-muted)}
   #tearSheet .ts-rsgrid .v{font-family:'IBM Plex Mono',monospace; text-align:right}
+  #tearSheet .ts-rs-group-label{font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ts-faint); margin:2px 0 6px}
 
   /* ==================================================================
      Home screen (Market Memory upgrade, mm-home.html mockup): search-first
@@ -572,6 +634,20 @@ function getPassphrase(){
   return passInputs.map(el=>el.value.trim()).find(Boolean) || localStorage.getItem("pm_pass") || "";
 }
 
+/* REFINEMENT.md §5: intended position size — a single global setting, same
+   localStorage pattern as the passphrase above. Editable inline from the
+   Monte Carlo section where it's actually used, rather than a separate
+   settings page — this app doesn't have one yet, and one field doesn't
+   justify building one. */
+function getIntendedSize(){
+  const v = Number(localStorage.getItem("mm_intended_size"));
+  return v > 0 ? v : null;
+}
+function setIntendedSize(v){
+  if(v > 0) localStorage.setItem("mm_intended_size", String(v));
+  else localStorage.removeItem("mm_intended_size");
+}
+
 /* nav — 3 destinations (Look up/Studies/Journal), sidebar on desktop, bottom
    tab bar on mobile, kept in sync by data-v rather than element identity. */
 function switchView(v){
@@ -741,8 +817,13 @@ function tsAsofHTML(rows){
   const d = new Date(row.as_of_ts);
   const dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const timeStr = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  return `<div class="ts-asof"><span class="live"></span>As of <b>${esc(dateStr)} · ${esc(timeStr)}</b>
-    <span class="delay">${row.features_json?.intraday_proxy ? 'manual override' : 'end-of-day close'}</span></div>`;
+  const stale = isStaleAsOf(row.as_of_ts);
+  return `<div class="ts-asof${stale?' stale':''}"><span class="live"></span>As of <b>${esc(dateStr)} · ${esc(timeStr)}</b>
+    ${stale
+      ? `<span class="delay">stale — every module below reflects this run</span>
+         <button class="ts-asof-refresh ts-refresh" data-ticker="${esc(row.ticker)}">Refresh</button>`
+      : `<span class="delay">${row.features_json?.intraday_proxy ? 'manual override' : 'end-of-day close'}</span>`}
+    </div>`;
 }
 
 function tsTabsHTML(){
@@ -893,20 +974,177 @@ function tsWirePriceChart(extras){
   });
 }
 
+// REFINEMENT.md §4: the reversal_signal (positioning-horizon extreme that's
+// already faded on the shortest near-term window) is the contrast the spec
+// wants visible up front, not buried in the rows list further down —
+// so it gets its own callout directly under the headline flag.
+function tsReversalSignalHTML(reversal){
+  if(!reversal) return "";
+  return `<div class="ts-rs-flag cooling" style="margin-top:8px">
+      <div class="hd">↩ Reversion may already be underway<span class="z">${ordinal(reversal.near_term_pctile)} pctile</span></div>
+      <p>${esc(reversal.plain||"")}</p>
+    </div>`;
+}
 function tsRsFlagHTML(extras){
-  const flagged = extras?.relative_strength?.flagged;
+  const rs = extras?.relative_strength;
+  const flagged = rs?.flagged;
   if(!flagged) return "";
   const isHot = flagged.state === "hot";
-  const res = flagged.resolution || {};
+  // The reversal-signal sentence gets its own callout below (tsReversalSignalHTML),
+  // so it's excluded here to avoid saying the same thing twice on screen — it's
+  // still in rs.plain untouched for the copy-for-Claude handoff bundle.
+  const bodyPlain = (rs.plain||[]).filter(p => p !== rs.reversal_signal?.plain);
   return `<div class="ts-section">
       <h3>Stretch vs. market <span class="badge">relative strength</span></h3>
       <div class="ts-rs-flag ${isHot?'hot':'cooling'}">
-        <div class="hd">${isHot?'⚠':'✦'} ${isHot?'Extreme reading':'Notable reading'}<span class="z">${flagged.pctile}th pctile</span></div>
-        <p>${esc((extras.relative_strength.plain||[]).join(" "))}</p>
+        <div class="hd">${isHot?'⚠':'✦'} ${isHot?'Extreme reading':'Notable reading'}<span class="z">${ordinal(flagged.pctile)} pctile</span></div>
+        <p>${esc(bodyPlain.join(" "))}</p>
       </div>
+      ${tsReversalSignalHTML(rs.reversal_signal)}
     </div>`;
 }
 
+// REFINEMENT.md §1: tile 2 previously read "likely further move" — the
+// same wording the forecast strip's endpoint framing uses — which is what
+// made the two look contradictory. Relabeled here so every tile reads as a
+// path/trough statistic; the explainer box below states the distinction
+// in full once, and the drawer (tsMonteCarloDrawerHTML) shows the
+// deterministic assumptions it was built from — episode dates, break-vs-
+// history weight, fixed params, sample window, computed-as-of.
+// REFINEMENT.md §2: exact mixture-quantile recombination of the two
+// pure-branch pools bottom_scenarios.py precomputed — Python did every
+// draw, this just re-weights them for whatever break% the slider is at.
+// Mirrors the Python reference implementation validated against the
+// engine's own default-weight stats before this was wired up.
+function mcWeightedTiles(histPool, breakPool, wBreak){
+  const wHist = 1 - wBreak;
+  const entries = [];
+  for(const v of histPool||[]) entries.push([v, wHist/histPool.length]);
+  for(const v of breakPool||[]) entries.push([v, wBreak/breakPool.length]);
+  if(!entries.length) return null;
+  entries.sort((a,b)=>a[0]-b[0]);
+  const total = entries.reduce((s,e)=>s+e[1], 0);
+  const lowInW = entries.filter(e=>e[0]>=-0.005).reduce((s,e)=>s+e[1], 0);
+  const quantile = q => { let c=0; for(const e of entries){ c+=e[1]; if(c/total>=q) return e[0]; } return entries[entries.length-1][0]; };
+  return {
+    pct_low_in: Math.round(lowInW/total*100),
+    likely_trough_pct: Math.round(quantile(0.5)*1000)/10,
+    tail_risk_pct: Math.round(quantile(0.1)*1000)/10,
+  };
+}
+function tsMcApplySlider(assumptions, wBreakPct){
+  const sl = assumptions?.slider;
+  if(!sl) return;
+  const tiles = mcWeightedTiles(sl.history_pool_troughs, sl.break_pool_troughs, wBreakPct/100);
+  if(!tiles) return;
+  const lowIn = document.getElementById("tsMcTileLowIn");
+  const trough = document.getElementById("tsMcTileTrough");
+  const tail = document.getElementById("tsMcTileTail");
+  const val = document.getElementById("tsMcSliderVal");
+  const resetEl = document.getElementById("tsMcSliderReset");
+  if(lowIn) lowIn.textContent = tiles.pct_low_in + "%";
+  if(trough) trough.textContent = (tiles.likely_trough_pct>0?'+':'') + tiles.likely_trough_pct + "%";
+  if(tail) tail.textContent = tiles.tail_risk_pct + "%";
+  if(val) val.textContent = wBreakPct + "%";
+  if(resetEl) resetEl.style.display = (wBreakPct === Math.round(assumptions.w_break*100)) ? "none" : "inline";
+}
+// REFINEMENT.md §1: tile 2 previously read "likely further move" — the
+// same wording the forecast strip's endpoint framing uses — which is what
+// made the two look contradictory. Relabeled here so every tile reads as a
+// path/trough statistic; the explainer box below states the distinction
+// in full once, and the drawer (tsMonteCarloDrawerHTML) shows the
+// deterministic assumptions it was built from — episode dates, break-vs-
+// history weight (adjustable — §2), fixed params, sample window, computed-as-of.
+function tsMonteCarloSliderHTML(a){
+  if(!a?.slider) return "";
+  const sl = a.slider;
+  const defPct = Math.round(a.w_break*100);
+  return `<div class="ts-mc-slider-wrap">
+      <div class="row"><span class="k">Break-branch weight <span class="tag">adjustable</span></span>
+        <span class="v" id="tsMcSliderVal">${defPct}%</span></div>
+      <input type="range" id="tsMcSlider" min="${Math.round(sl.min_w_break*100)}" max="${Math.round(sl.max_w_break*100)}"
+        step="1" value="${defPct}">
+      <div class="hint">Default (engine-computed): ${defPct}% — ${esc(a.w_history_reason)}
+        <span class="reset" id="tsMcSliderReset" style="display:none">Reset</span></div>
+    </div>`;
+}
+function tsMonteCarloDrawerHTML(a){
+  if(!a) return "";
+  const computedAt = a.computed_at ? new Date(a.computed_at).toLocaleString() : "–";
+  const dateRange = a.sample_date_start && a.sample_date_end
+    ? `${a.sample_date_start} – ${a.sample_date_end}` : "–";
+  const row = (k,v) => `<div class="row"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`;
+  return `<div class="ts-mc-drawer" id="tsMcDrawer">
+      ${tsMonteCarloSliderHTML(a)}
+      ${row("Simulated paths", a.n_sims.toLocaleString())}
+      ${row("History-branch weight (default)", `${Math.round(a.w_history*100)}% — ${a.w_history_reason}`)}
+      ${row("Break-branch weight (default)", `${Math.round(a.w_break*100)}% (no-precedent bootstrap)`)}
+      ${row("Simulated horizon", `${a.horizon_days} trading days`)}
+      ${row("Drawdown-depth tolerance", `±${a.depth_tolerance_pct}pp (fixed)`)}
+      ${row("Bootstrap block size", `${a.block_size_days}d (fixed)`)}
+      ${row("Analog sample window", dateRange)}
+      ${row("Computed as of", computedAt)}
+      ${a.episode_dates.length ? `<div class="eplabel">${a.episode_dates.length} analog episode date${a.episode_dates.length===1?'':'s'}</div>
+        <div class="ts-mc-eplist">${a.episode_dates.map(d=>`<span class="ts-mc-epchip">${esc(d)}</span>`).join("")}</div>` : ""}
+    </div>`;
+}
+// REFINEMENT.md §6: name the staging levels directly rather than leaving
+// the user to turn a trough percentage back into a price and a tranche
+// decision by hand. Tranche 1 (current price) is skipped here — the
+// TearSheet header already shows the current price — only the two levels
+// that are actually new information get their own row.
+function tsMonteCarloLadderHTML(ladder){
+  if(!ladder?.length) return "";
+  const rows = ladder.filter(l => l.tranche !== 1);
+  if(!rows.length) return "";
+  return `<div class="ts-mc-ladder">
+      <div class="lbl">Staging levels</div>
+      ${rows.map(l => `<div class="r"><span class="tr">${esc(l.label)}</span>
+        <span class="px">$${l.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        <span class="pctl">${l.pctile}th pctile · ${l.return_pct>0?'+':''}${l.return_pct}%</span></div>`).join("")}
+    </div>`;
+}
+// REFINEMENT.md §5: translate the tail-risk PERCENTAGE into the dollars a
+// user actually sizes in. One tranche = 1/3 of intended size, matching the
+// app's own 3-tranche staged-entry convention (same one the §6 ladder above
+// names levels for). `editing` forces the input form even when a size is
+// already saved, for the "edit" affordance.
+const MC_TRANCHE_FRACTION = 1/3;
+function tsMcTailDollarsHTML(tailRiskPct, editing){
+  const size = getIntendedSize();
+  if(editing || size == null){
+    return `<div class="ts-mc-tail-dollars" id="tsMcTailDollars">
+        <p>${size!=null ? 'Update your intended position size:' : 'Set your intended position size to see the tail scenario in dollars.'}</p>
+        <div class="edit-row">
+          <input type="number" min="0" step="100" id="tsMcSizeInput" placeholder="e.g. 15000" value="${size!=null?size:''}">
+          <button class="save" id="tsMcSizeSave">Save</button>
+        </div>
+      </div>`;
+  }
+  const trancheSize = size * MC_TRANCHE_FRACTION;
+  const loss = Math.round(trancheSize * Math.abs(tailRiskPct) / 100);
+  return `<div class="ts-mc-tail-dollars" id="tsMcTailDollars">
+      <p>A ⅓ tranche at your $${size.toLocaleString()} intended size loses roughly
+        <b>$${loss.toLocaleString()}</b> in the tail scenario.</p>
+      <span class="edit" id="tsMcSizeEdit">Edit intended size</span>
+    </div>`;
+}
+function wireMcTailDollars(tailRiskPct){
+  const saveBtn = document.getElementById("tsMcSizeSave");
+  if(saveBtn) saveBtn.onclick = () => {
+    const val = Number(document.getElementById("tsMcSizeInput").value);
+    if(val > 0){
+      setIntendedSize(val);
+      document.getElementById("tsMcTailDollars").outerHTML = tsMcTailDollarsHTML(tailRiskPct, false);
+      wireMcTailDollars(tailRiskPct);
+    }
+  };
+  const editLink = document.getElementById("tsMcSizeEdit");
+  if(editLink) editLink.onclick = () => {
+    document.getElementById("tsMcTailDollars").outerHTML = tsMcTailDollarsHTML(tailRiskPct, true);
+    wireMcTailDollars(tailRiskPct);
+  };
+}
 function tsMonteCarloHTML(extras){
   const bs = extras?.bottom_scenarios;
   if(!bs || !bs.available) return "";
@@ -914,23 +1152,47 @@ function tsMonteCarloHTML(extras){
   return `<div class="ts-section">
       <h3>Where the bottom could land <span class="badge">Monte Carlo</span></h3>
       <div class="ts-mc-stats">
-        <div class="ts-mc-stat good"><b>${s.pct_low_in}%</b><span>low may already be in</span></div>
-        <div class="ts-mc-stat"><b>${s.likely_trough_pct>0?'+':''}${s.likely_trough_pct}%</b><span>likely further move</span></div>
-        <div class="ts-mc-stat risk"><b>${s.tail_risk_pct}%</b><span>tail-risk scenario</span></div>
+        <div class="ts-mc-stat good"><b id="tsMcTileLowIn">${s.pct_low_in}%</b><span>low may already be in</span></div>
+        <div class="ts-mc-stat"><b id="tsMcTileTrough">${s.likely_trough_pct>0?'+':''}${s.likely_trough_pct}%</b><span>likely further drawdown before bottoming</span></div>
+        <div class="ts-mc-stat risk"><b id="tsMcTileTail">${s.tail_risk_pct}%</b><span>tail-risk path low</span></div>
       </div>
-      <div class="ts-p muted" style="margin-top:10px">${esc(bs.plain[bs.plain.length-1]||'')}</div>
+      <div class="ts-mc-explainer" id="tsMcExplainer">
+        <p>${esc(bs.explainer||'')}</p>
+        <div class="aff"><span class="chev">›</span><span>How this was calculated</span></div>
+      </div>
+      ${tsMonteCarloLadderHTML(bs.ladder)}
+      ${tsMcTailDollarsHTML(s.tail_risk_pct, false)}
+      ${tsMonteCarloDrawerHTML(bs.assumptions)}
     </div>`;
 }
 
+// REFINEMENT.md §3: n and the analog sample date range ride along on every
+// horizon row (forecast_engine.py's evidence_json.sample_size), and a
+// concentrated sample (single regime / <1yr window — evidence_json.
+// sample_concentration, same on every row) gets a one-line warning above
+// the strip instead of presenting silently alongside a green confidence bar.
+function tsSampleRangeText(sampleSize){
+  if(!sampleSize) return "";
+  const {n, date_start, date_end} = sampleSize;
+  if(!date_start || !date_end) return n!=null ? `n=${n}` : "";
+  const y0 = date_start.slice(0,4), y1 = date_end.slice(0,4);
+  const range = y0===y1 ? y0 : `${y0}–${y1}`;
+  return `n=${n} · ${range}`;
+}
 function tsForecastStripHTML(rows){
   if(!rows?.length) return "";
   const maxP = Math.max(...rows.map(r=>r.p_positive||0), 0.01);
+  const warning = rows[0]?.evidence_json?.sample_concentration?.warning;
   return `<div class="ts-section">
       <h3>Odds it's higher, by horizon</h3>
+      ${warning ? `<div class="ts-tflag warn"><div class="hd">⚠ Concentrated sample</div><p>${esc(warning)}</p></div>` : ""}
       ${rows.map(r=>{
         const barColor = (r.p_positive||0) >= 0.6 ? 'var(--ts-buy)' : (r.p_positive||0) <= 0.45 ? 'var(--ts-avoid)' : 'var(--ts-wait)';
+        const ss = r.evidence_json?.sample_size;
+        const sampleTxt = tsSampleRangeText(ss);
         return `<div class="ts-fc-row"><span class="ts-fc-h">${r.horizon_days}d</span>
-          <span class="ts-fc-txt"><b>${pct0(r.p_positive)}</b> higher · median <b>${pct(r.q50)}</b></span>
+          <span class="ts-fc-txt"><b>${pct0(r.p_positive)}</b> higher · median <b>${pct(r.q50)}</b>
+            ${sampleTxt ? `<span class="ts-fc-sample${ss?.concentrated?' concentrated':''}">${esc(sampleTxt)}</span>` : ""}</span>
           <span class="ts-fc-bar"><i style="width:${Math.round((r.p_positive||0)/maxP*100)}%;background:${barColor}"></i></span></div>`;
       }).join("")}
     </div>`;
@@ -1067,15 +1329,25 @@ function tsWireTechPriceChart(extras){
   });
 }
 
+// REFINEMENT.md §4: near-term (5d/10d) rows are the timing-relevant ones,
+// positioning (20/50/100/200d) are the multi-month ones — grouped and
+// labeled separately, near-term first, rather than one flat list where the
+// distinction has to be inferred from the window number.
+function tsRsRowHTML(r){
+  return `<div class="k">vs ${esc(r.vs)} · ${r.window}d</div>
+    <div class="v">${r.pctile!=null?ordinal(r.pctile)+' pctile':'–'} (z ${r.z!=null?(r.z>=0?'+':'')+r.z:'–'}) · ${esc(r.state)}</div>`;
+}
 function tsRsBreakdownHTML(extras){
   const rs = extras?.relative_strength;
   if(!rs?.rows?.length) return "";
+  const near = rs.rows.filter(r=>r.group==="near_term");
+  const positioning = rs.rows.filter(r=>r.group!=="near_term");
   return `<div class="ts-tread">
       <span class="k">Relative strength · full detail</span>
-      <div class="ts-rsgrid">
-        ${rs.rows.map(r=>`<div class="k">vs ${esc(r.vs)} · ${r.window}d</div>
-          <div class="v">${r.pctile!=null?r.pctile+'th pctile':'–'} (z ${r.z!=null?(r.z>=0?'+':'')+r.z:'–'}) · ${esc(r.state)}</div>`).join("")}
-      </div>
+      ${near.length ? `<div class="ts-rs-group-label">Near term (1–2 weeks)</div>
+        <div class="ts-rsgrid compact">${near.map(tsRsRowHTML).join("")}</div>` : ""}
+      <div class="ts-rs-group-label">Positioning (3–12 months)</div>
+      <div class="ts-rsgrid">${positioning.map(tsRsRowHTML).join("")}</div>
     </div>`;
 }
 
@@ -1237,6 +1509,10 @@ async function openTearSheet(ticker, label, opts){
   const extras = rows?.[0]?.evidence_json?.tearsheet_extras || {};
   const research = await ensureResearchLoaded();
   const relativeFallbackHTML = extras.relative_strength ? "" : await tearSheetRelativeHTML(ticker, research);
+  // REFINEMENT.md §7: every module in tearsheet_extras came out of the same
+  // run as rows[0].as_of_ts, so one staleness check on the sheet root grades
+  // all of them at once (tsAsofHTML's own banner + the .ts-section dimming).
+  sheet.classList.toggle("stale", isStaleAsOf(rows?.[0]?.as_of_ts));
 
   body.innerHTML = [
     tsHeaderHTML(ticker, label, research, rows),
@@ -1292,6 +1568,30 @@ async function openTearSheet(ticker, label, opts){
     }
     setTimeout(()=>{ epCopyBtn.textContent = "⧉  Copy research prompt for Claude"; }, 2500);
   };
+  // REFINEMENT.md §1: tap the MC explainer box to open the "how this was
+  // calculated" assumptions drawer — same show/hide toggle pattern as the
+  // episode paste-research form below.
+  const mcExplainer = document.getElementById("tsMcExplainer");
+  if(mcExplainer) mcExplainer.onclick = () => {
+    mcExplainer.classList.toggle("open");
+    document.getElementById("tsMcDrawer")?.classList.toggle("open");
+  };
+  // REFINEMENT.md §2: break-branch weight slider — live client-side
+  // recombination of the two pools bottom_scenarios.py precomputed.
+  const mcAssumptions = extras?.bottom_scenarios?.assumptions;
+  const mcSlider = document.getElementById("tsMcSlider");
+  if(mcSlider && mcAssumptions?.slider){
+    mcSlider.oninput = () => tsMcApplySlider(mcAssumptions, Number(mcSlider.value));
+    const mcReset = document.getElementById("tsMcSliderReset");
+    if(mcReset) mcReset.onclick = () => {
+      mcSlider.value = Math.round(mcAssumptions.w_break*100);
+      tsMcApplySlider(mcAssumptions, Number(mcSlider.value));
+    };
+  }
+  // REFINEMENT.md §5: tail risk in portfolio ($) terms.
+  if(extras?.bottom_scenarios?.available){
+    wireMcTailDollars(extras.bottom_scenarios.stats.tail_risk_pct);
+  }
   // Episodes write-back (BUILD.md §5): paste the causal narrative Claude
   // returned straight into the episode library via the already-deployed
   // upsert_episode op, so the same date never needs re-researching.
@@ -1367,6 +1667,29 @@ const esc = s => { const d=document.createElement("div"); d.textContent=s??""; r
 const MM_FN_URL = "https://anzbpxqvibgpxnwgyqoc.supabase.co/functions/v1/mm-journal";
 const pct = v => v==null ? "–" : (v>0?"+":"")+(v*100).toFixed(1)+"%";
 const pct0 = v => v==null ? "–" : Math.round(v*100)+"%";
+const ordinal = n => { if(n==null) return "–"; const r=Math.round(n), m=r%100;
+  const suf = (m>=10&&m<=20) ? "th" : ({1:"st",2:"nd",3:"rd"}[r%10] || "th"); return r+suf; };
+
+// REFINEMENT.md §7: every tearsheet_extras module (verdict, stretch, Monte
+// Carlo, forecast strip) is computed together in one forecast_engine.py run,
+// so they all share one as_of_ts — no per-module timestamp needed, staleness
+// just needs to compare that one timestamp to "now" in trading days.
+// "More than ~1 trading day old" means: fresh all day the day after a
+// close-of-day batch run, stale from two trading days out.
+function tradingDaysElapsed(pastISO, now){
+  const past = new Date(pastISO);
+  const d = new Date(past.getFullYear(), past.getMonth(), past.getDate());
+  const today0 = now || new Date();
+  const today = new Date(today0.getFullYear(), today0.getMonth(), today0.getDate());
+  let count = 0;
+  while(d < today){
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if(day !== 0 && day !== 6) count++;
+  }
+  return count;
+}
+const isStaleAsOf = iso => iso != null && tradingDaysElapsed(iso) > 1;
 const RECLABEL_TEXT = {
   no_reliable_signal: "No reliable signal",
   hold_no_change: "Hold / no change",

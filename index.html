@@ -1554,21 +1554,24 @@ function renderHomeBrief(entries, briefEl, countEl){
   const tracked = entries.filter(e => e.latest);
   const flips = tracked.filter(e => e.prior &&
     homeVerdictOf(e.prior)?.verdict !== homeVerdictOf(e.latest)?.verdict);
-  countEl.textContent = flips.length ? `${flips.length} changed` : "";
   const summary = flips.length
     ? `${flips.length} of ${tracked.length} tracked ticker${tracked.length===1?'':'s'} changed verdict since yesterday's batch.`
     : tracked.length
       ? `No verdict changes since yesterday's batch — all ${tracked.length} tracked tickers held their prior call.`
       : `No forecast history yet.`;
   const flipRows = flips.map(e => {
-    const from = homeVerdictOf(e.prior).verdict, to = homeVerdictOf(e.latest).verdict;
+    const from = homeVerdictOf(e.prior)?.verdict || 'no prior read', to = homeVerdictOf(e.latest)?.verdict;
     return `<div class="home-flip">
       <span class="tk">${esc(e.ticker)}</span>
       <span class="from">${esc(from)}</span><span class="arrow">→</span>
       <span class="to ${homeVerdictClass(to)}">${esc(to)}</span>
-      <span class="why">confidence: ${esc(homeVerdictOf(e.latest).confidence_label||'–')}</span>
+      <span class="why">confidence: ${esc(homeVerdictOf(e.latest)?.confidence_label||'–')}</span>
     </div>`;
   }).join("");
+  // Both DOM writes happen together, after all computation above has
+  // succeeded — so a thrown error never leaves the count and card
+  // out of sync (one rendered, the other stuck on the other's stale state).
+  countEl.textContent = flips.length ? `${flips.length} changed` : "";
   briefEl.innerHTML = `<div class="top"><p>${esc(summary)}</p></div>` +
     (flipRows ? `<div class="home-flips">${flipRows}</div>` : "");
 }

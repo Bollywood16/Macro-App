@@ -116,6 +116,8 @@ def supply_shelves(df: pd.DataFrame, lookback: int = 90, bins: int = 24,
         span = last - first + 1
         vol[first:last + 1] += r["volume"] / span
     total = vol.sum()
+    if not total or pd.isna(total):
+        return []  # no valid volume anywhere in the lookback window
     thresh = np.quantile(vol, hvn_quantile)
     spot = float(df["close"].iloc[-1])
     shelves = []

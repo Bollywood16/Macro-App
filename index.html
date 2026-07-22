@@ -1807,15 +1807,17 @@ loadHomeWatchlist(); // Home (desk) is the default-on view at page load
 
 /* ------------------------------------------------------------------
    Home screen (mm-home.html mockup): search-first watchlist replacing
-   the removed chat Desk (BUILD.md §4 "App home: NOT chat"). Verdict/
-   confidence read the same forecasts.evidence_json.tearsheet_extras.
-   dip_context the TearSheet already uses — duplicated onto every
-   horizon row for a given as_of_ts (forecast_engine.py), so any single
-   row per (ticker, as_of_ts) carries it.
+   the removed chat Desk (BUILD.md §4 "App home: NOT chat"). query_forecasts
+   is called with view:"watchlist", which has mm-journal alias the nested
+   forecasts.evidence_json.tearsheet_extras.dip_context.verdict (the same
+   verdict the TearSheet reads, duplicated onto every horizon row for a
+   given as_of_ts by forecast_engine.py) as a top-level `verdict` field,
+   and features_json.query_features.ret_1d as `ret_1d` — so the watchlist
+   never pulls the full evidence_json/features_json blobs over the wire.
    ------------------------------------------------------------------ */
 const HOME_CONF_DOTS = {"high":3, "moderate":2, "low / likely mined":1};
 function homeVerdictClass(v){ return v==="BUY"?"buy":v==="AVOID"?"avoid":"wait"; }
-function homeVerdictOf(row){ return row?.evidence_json?.tearsheet_extras?.dip_context?.verdict; }
+function homeVerdictOf(row){ return row?.verdict; }
 
 function homeMarketStatus(){
   // Approximate: weekday + 9:30-16:00 ET, ignoring holidays/half-days —
@@ -1854,7 +1856,7 @@ async function loadHomeWatchlist(){
   }
   let forecasts;
   try{
-    forecasts = (await mmCall("query_forecasts", {limit:400})).forecasts || [];
+    forecasts = (await mmCall("query_forecasts", {limit:50, view:"watchlist"})).forecasts || [];
   }catch(e){
     errEl.textContent = e.message;
     rowsEl.innerHTML = `<div class="empty">Couldn't load the watchlist.</div>`;
@@ -1914,7 +1916,7 @@ function renderHomeRows(entries, rowsEl){
     const verdict = homeVerdictOf(e.latest);
     const vClass = verdict ? homeVerdictClass(verdict.verdict) : "";
     const price = e.latest?.effective_price;
-    const ret1d = e.latest?.features_json?.query_features?.ret_1d;
+    const ret1d = e.latest?.ret_1d;
     const flipped = e.prior && verdict && homeVerdictOf(e.prior)?.verdict !== verdict.verdict;
     const dotN = verdict ? (HOME_CONF_DOTS[verdict.confidence_label] || 0) : 0;
     return `<div class="home-row ${vClass}" data-ticker="${esc(e.ticker)}" data-label="${esc(e.label||'')}">

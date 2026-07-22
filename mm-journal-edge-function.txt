@@ -250,7 +250,16 @@ Deno.serve(async (req) => {
 
       case "query_forecasts": {
         const limit = Number(payload.limit) > 0 ? Number(payload.limit) : 200;
-        let q = supabase.from("forecasts").select("*")
+        // Home watchlist (index.html) passes view:"watchlist" and only
+        // needs a thin per-row slice; mm-search's Q&A tool calls this same
+        // op with no view and still needs the full row (p_positive,
+        // evidence_json.recommendation_label), so "*" stays the default.
+        const WATCHLIST_SELECT = `ticker, as_of_ts, effective_price, horizon_days,
+          confidence_score, confidence_label,
+          verdict:evidence_json->tearsheet_extras->dip_context->verdict,
+          ret_1d:features_json->query_features->ret_1d`;
+        let q = supabase.from("forecasts")
+          .select(payload.view === "watchlist" ? WATCHLIST_SELECT : "*")
           .order("as_of_ts", { ascending: false }).limit(limit);
         if (payload.ticker) q = q.eq("ticker", payload.ticker);
         if (payload.model_version) q = q.eq("model_version", payload.model_version);

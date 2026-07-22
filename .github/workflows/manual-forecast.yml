@@ -1,0 +1,37 @@
+name: Manual Forecast Refresh
+
+# Deliberately manual-only (no schedule trigger) and always full-universe
+# (no ticker input) -- a single, unambiguous "refresh every forecast row
+# right now" button, distinct from Forecast Engine's on-demand single-
+# ticker dispatch (which also has a workflow_dispatch trigger, but is
+# meant for chat-triggered one-off ticker runs, not a full watchlist
+# refresh).
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Compute and print only; skip the Supabase write"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  run-full-refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install yfinance pandas numpy
+      - name: Run full-universe forecast refresh
+        env:
+          APP_PASSPHRASE: ${{ secrets.APP_PASSPHRASE }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python scripts/forecast_engine.py $ARGS

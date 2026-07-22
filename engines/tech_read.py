@@ -233,3 +233,23 @@ def tech_read(df: pd.DataFrame, ticker: str) -> dict:
         "plain": plain,
         "chart_series": chart_series,
     }
+
+
+def to_ballot(result: dict) -> dict:
+    """ONE voter for the vote-aggregation engine (agreement_engine, module
+    D). NOT a verdict. Ships calibrated=False / weight 0 until scored
+    against matured outcomes, same as every other secondary voter."""
+    trend = result.get("trend") or {}
+    mom = result.get("momentum") or {}
+    state = trend.get("state")
+    vote = {"uptrend": "BUY", "downtrend": "AVOID"}.get(state, "WAIT")
+    if mom.get("available"):
+        agree = ((state == "uptrend" and mom.get("macd_rising"))
+                 or (state == "downtrend" and not mom.get("macd_rising")))
+        confidence = 0.55 if agree else 0.4
+    else:
+        confidence = 0.4
+    return {"voter": "tech_read", "vote": vote, "raw_confidence": confidence,
+            "calibrated": False, "weight_until_calibrated": 0.0,
+            "independent_n": 1,
+            "rationale": "; ".join(result.get("plain", [])[:2])}

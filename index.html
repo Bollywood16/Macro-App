@@ -793,7 +793,7 @@ async function ensureUniverseLoaded(){
 // existing sources this component already read from — nothing new was
 // added to the fetch surface, this just renders more of what's already
 // there: (1) forecasts.evidence_json.tearsheet_extras — dip_context,
-// tech_read, bottom_scenarios, relative_strength, episodes, all computed
+// tech_read, bottom_scenarios, relative_strength, technicals, episodes, all computed
 // server-side in forecast_engine.py's compute_tearsheet_extras(); (2) the
 // pre-existing research_digest.json for header price/label and as a
 // same-as-before fallback when a ticker has never had a forecast
@@ -862,6 +862,7 @@ function tsVerdictHTML(extras){
         <div class="row"><span>Confidence</span><b>${esc(v.confidence_label || "–")} · ${confPct}</b></div>
         <div class="ts-meter"><div class="fill" style="width:${confPct}%;background:var(${colorVar})"></div></div>
       </div>
+      ${extras?.agreement ? `<div class="ts-p muted" style="margin-top:10px">${esc(extras.agreement.card_line)}</div>` : ""}
     </div>`;
 }
 
@@ -1201,11 +1202,13 @@ function tsForecastStripHTML(rows){
 function tsBuildHandoffBundle(ticker, rows, extras, decisions){
   const row = rows?.find(r=>r.horizon_days===5) || rows?.[0];
   const dc = extras?.dip_context, rs = extras?.relative_strength, mc = extras?.bottom_scenarios;
+  const tb = extras?.technicals;
   const lines = [`Market Memory tear sheet — ${ticker}`, `As of ${row?.as_of_ts || 'unknown'}`, ""];
   if(dc?.verdict) lines.push(`Verdict: ${dc.verdict.verdict} (confidence: ${dc.verdict.confidence_label})`);
   if(dc?.plain?.length) lines.push(dc.plain.join(" "));
   if(rs?.plain?.length) lines.push("Relative strength: " + rs.plain.join(" "));
   if(mc?.plain?.length) lines.push("Trough scenarios: " + mc.plain.join(" "));
+  if(tb?.plain_language?.length) lines.push("Technicals: " + tb.plain_language.join(" "));
   if(rows?.length){
     lines.push("", "Forecast by horizon:");
     rows.forEach(r => lines.push(`  ${r.horizon_days}d: ${pct0(r.p_positive)} positive, median ${pct(r.q50)}, confidence ${r.confidence_label}`));

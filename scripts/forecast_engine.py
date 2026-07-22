@@ -78,6 +78,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import research_engine as re_engine  # noqa: E402  (reuse fetch/rsi/HY-OAS)
 import rotation_engine as rot_engine  # noqa: E402  (Stage 2a: leadership context)
+import agreement_engine as agr_engine  # noqa: E402  (robustness_final module D)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -96,6 +97,8 @@ import relative_strength as eng_relative_strength  # noqa: E402
 import tech_read as eng_tech_read              # noqa: E402
 import bottom_scenarios as eng_bottom_scenarios  # noqa: E402
 import episodes as eng_episodes                # noqa: E402
+import technicals_engine as eng_technicals     # noqa: E402
+import verdict_triggers as eng_verdict_triggers  # noqa: E402
 
 FUNCTION_URL = os.environ.get(
     "MM_FUNCTION_URL",
@@ -144,6 +147,17 @@ LABEL_TEXT = {
     "high_conviction_long_candidate":
         "High-conviction candidate: rare and evidence-rich setup. Review "
         "and log a decision.",
+}
+
+# agreement_engine (module D): maps recommendation_label()'s richer taxonomy
+# down to the three-way BUY/WAIT/AVOID vote the committee ballot needs.
+FORECAST_VOTE_MAP = {
+    "no_reliable_signal": "WAIT",
+    "hold_no_change": "WAIT",
+    "watch_for_confirmation": "WAIT",
+    "reduce_defensive_candidate": "AVOID",
+    "moderate_long_candidate": "BUY",
+    "high_conviction_long_candidate": "BUY",
 }
 
 # ------------------------------------------------------------- universe
@@ -587,17 +601,35 @@ def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
     Wrapped so any single engine's failure (bad data, thin history) never
     takes down the forecast the rest of this file already computes."""
     extras = {}
+    # Raw ballot dicts for the four uncalibrated committee voters (agreement_
+    # engine, module D) — gathered here since this is where each engine's
+    # result is already in scope; the two calibrated voters (dip_context,
+    # forecast) are assembled in run_one() below, where their confidence
+    # scores are computed.
+    committee_ballots = []
+    technical_gate_count = 0
+    try:
+        technicals_read = eng_technicals.analyze(
+            ohlcv, intraday=None, as_of=str(ohlcv.index[-1].date()))
+        extras["technicals"] = technicals_read.to_handoff_block()["technicals"]
+        technical_gate_count = technicals_read.active_gate_count()
+        committee_ballots.append(technicals_read.to_committee_ballot())
+    except Exception as e:
+        print(f"[warn] technicals_engine failed for {ticker}: {e}")
     try:
         extras["dip_context"] = eng_dip_context.dip_context(
-            ohlcv, spy_close_run, vix, oas, ticker)
+            ohlcv, spy_close_run, vix, oas, ticker,
+            technical_gate_count=technical_gate_count)
     except Exception as e:
         print(f"[warn] dip_context failed for {ticker}: {e}")
     try:
         extras["tech_read"] = eng_tech_read.tech_read(ohlcv, ticker)
+        committee_ballots.append(eng_tech_read.to_ballot(extras["tech_read"]))
     except Exception as e:
         print(f"[warn] tech_read failed for {ticker}: {e}")
     try:
         extras["bottom_scenarios"] = eng_bottom_scenarios.bottom_scenarios(ohlcv, ticker)
+        committee_ballots.append(eng_bottom_scenarios.to_ballot(extras["bottom_scenarios"]))
     except Exception as e:
         print(f"[warn] bottom_scenarios failed for {ticker}: {e}")
     try:
@@ -612,6 +644,7 @@ def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
         bench_prices[ticker] = ohlcv["close"]
         extras["relative_strength"] = eng_relative_strength.relative_strength(
             bench_prices, ticker, benchmarks)
+        committee_ballots.append(eng_relative_strength.to_ballot(extras["relative_strength"]))
     except Exception as e:
         print(f"[warn] relative_strength failed for {ticker}: {e}")
     try:
@@ -625,7 +658,7 @@ def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
         extras["episodes"] = ep
     except Exception as e:
         print(f"[warn] episodes failed for {ticker}: {e}")
-    return extras
+    return extras, committee_ballots
 
 
 # ---------------------------------------------------------------- run one
@@ -686,11 +719,13 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
     # path above entirely — that machinery stays on its original
     # close-only Series so this can't regress it.
     tearsheet_extras = {}
+    committee_ballots = []
+    ohlcv = None
     try:
         ohlcv = re_engine.fetch_ohlcv(ticker)
         if intraday_proxy:
             ohlcv = append_manual_price_ohlcv(ohlcv, manual_price)
-        tearsheet_extras = compute_tearsheet_extras(
+        tearsheet_extras, committee_ballots = compute_tearsheet_extras(
             ticker, ohlcv, spy_close_run, vix, oas, universe_prices,
             analog_map or {}, dry_run)
     except Exception as e:
@@ -740,6 +775,60 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
                                           ens5["p_positive"], ens5["expected_mae"])
     else:
         conf_score, conf_label, rec_label = 0.0, "low", "no_reliable_signal"
+
+    # agreement_engine (robustness_final module D): the two CALIBRATED
+    # voters are assembled here, where their confidence scores exist —
+    # dip_context (regime/dip-context verdict) and forecast (this horizon
+    # strip). The four uncalibrated voters (technicals, tech_read,
+    # bottom_scenarios, relative_strength) were already gathered as raw
+    # ballot dicts in compute_tearsheet_extras. All raw dicts are stored
+    # for audit; only Ballot() objects built from them are scored.
+    def _ballot_from_dict(d):
+        return agr_engine.Ballot(voter=d["voter"], vote=d["vote"],
+                                  confidence=d["raw_confidence"],
+                                  independent_n=d.get("independent_n", 0),
+                                  calibrated=d.get("calibrated", False))
+
+    all_ballots = list(committee_ballots)
+    dc_extras = tearsheet_extras.get("dip_context")
+    if dc_extras and dc_extras.get("verdict"):
+        dcv = dc_extras["verdict"]
+        dc_n = (dc_extras.get("horizons", {}).get("21") or {}).get("n", 0)
+        all_ballots.append({
+            "voter": "dip_context", "vote": dcv["verdict"],
+            "raw_confidence": (dcv.get("confidence_score") or 0) / 100.0,
+            "calibrated": True, "independent_n": dc_n,
+            "rationale": "; ".join(dc_extras.get("plain", [])[:2]),
+        })
+    all_ballots.append({
+        "voter": "forecast", "vote": FORECAST_VOTE_MAP.get(rec_label, "WAIT"),
+        "raw_confidence": conf_score / 100.0, "calibrated": True,
+        "independent_n": ens5["n"] if ens5 else 0,
+        "rationale": LABEL_TEXT.get(rec_label, ""),
+    })
+    agreement_result = agr_engine.score([_ballot_from_dict(b) for b in all_ballots])
+    tearsheet_extras["agreement"] = {
+        "disagreement": agreement_result.disagreement,
+        "convergence": agreement_result.convergence,
+        "effective_voters": agreement_result.effective_voters,
+        "adequate_evidence": agreement_result.adequate_evidence,
+        "state": agreement_result.state,
+        "card_line": agreement_result.card_line,
+        "detail": agreement_result.detail,
+        "ballots": all_ballots,
+    }
+
+    # ROBUSTNESS_FINAL module C: verdict-change triggers (the "armed alarm").
+    # Written last, after dip_context/technicals/tech_read/bottom_scenarios/
+    # relative_strength/episodes/agreement are all already in tearsheet_extras
+    # -- display/record only, no aggregation, nothing reads `met` back into
+    # a verdict.
+    if ohlcv is not None:
+        try:
+            tearsheet_extras["triggers"] = eng_verdict_triggers.compute_triggers(
+                ohlcv, spy_close_run, tearsheet_extras.get("bottom_scenarios"))
+        except Exception as e:
+            print(f"[warn] verdict_triggers failed for {ticker}: {e}")
 
     drivers = build_drivers(ticker, query, current_regime, intraday_proxy)
     invalidation_risks = build_invalidation_risks(ticker, current_regime,

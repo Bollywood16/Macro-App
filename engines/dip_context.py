@@ -221,7 +221,8 @@ def build_verdict(stats, confidence_score, confidence_label):
 # ------------------------------------------------------------- entrypoint
 
 def dip_context(df: pd.DataFrame, spy_close: pd.Series, vix: pd.Series,
-                 oas: pd.Series, ticker: str, dip_threshold=DIP_THRESHOLD) -> dict:
+                 oas: pd.Series, ticker: str, dip_threshold=DIP_THRESHOLD,
+                 technical_gate_count: int = 0) -> dict:
     close = df["close"]
     volume = df["volume"] if "volume" in df.columns else None
     idx = close.index
@@ -247,7 +248,8 @@ def dip_context(df: pd.DataFrame, spy_close: pd.Series, vix: pd.Series,
     decades = len({idx[p].year // 10 for p in positions}) if positions else 0
     searched = max(1, 4 - depth)  # how many depth levels were tried before landing
     consistency = max(primary["p_positive"], 1 - primary["p_positive"]) if primary else 0.0
-    score, label = deflated_confidence(n, consistency, depth, decades, searched)
+    effective_depth = depth + technical_gate_count
+    score, label = deflated_confidence(n, consistency, effective_depth, decades, searched)
 
     verdict = build_verdict(primary, score, label)
     vol = _volume_forensics(close, volume)
@@ -275,6 +277,7 @@ def dip_context(df: pd.DataFrame, spy_close: pd.Series, vix: pd.Series,
         "current_drawdown_pct": round(cur_dd * 100, 1) if cur_dd is not None else None,
         "regime": {"vix": current_tuple[0], "credit": current_tuple[1], "spy_trend": current_tuple[2]},
         "regime_match_depth": depth,
+        "technical_gate_count": technical_gate_count,
         "horizons": {str(h): horizon_results[h] for h in HORIZONS},
         "volume_forensics": vol,
         "verdict": verdict,

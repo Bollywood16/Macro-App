@@ -214,3 +214,22 @@ def relative_strength(prices: dict[str, pd.Series], ticker: str,
         "rows": rows, "plain": plain, "reversal_signal": reversal,
         "near_term_windows": NEAR_TERM_WINDOWS, "positioning_windows": POSITIONING_WINDOWS,
     }
+
+
+def to_ballot(result: dict) -> dict:
+    """ONE voter for the vote-aggregation engine (agreement_engine, module
+    D). NOT a verdict. Ships calibrated=False / weight 0 until scored
+    against matured outcomes, same as every other secondary voter."""
+    flagged = result.get("flagged")
+    res = (flagged or {}).get("resolution") or {}
+    n = res.get("n", 0)
+    if not flagged:
+        vote = "BUY"          # not stretched vs. any benchmark
+    elif n and res.get("pct_reverted", 0) > 50 and (res.get("median_giveback_pct") or 0) < 0:
+        vote = "AVOID"        # stretched, and past extremes reliably gave it back
+    else:
+        vote = "WAIT"         # stretched but giveback not yet confirmed by history
+    return {"voter": "relative_strength", "vote": vote, "raw_confidence": 0.5,
+            "calibrated": False, "weight_until_calibrated": 0.0,
+            "independent_n": n,
+            "rationale": "; ".join(result.get("plain", [])[:2])}

@@ -263,3 +263,23 @@ def bottom_scenarios(df: pd.DataFrame, ticker: str, dip_threshold=DIP_THRESHOLD,
         "ladder": ladder, "ladder_plain": ladder_plain,
         "assumptions": assumptions,
     }
+
+
+def to_ballot(result: dict) -> dict:
+    """ONE voter for the vote-aggregation engine (agreement_engine, module
+    D). NOT a verdict. Ships calibrated=False / weight 0 until scored
+    against matured outcomes, same as every other secondary voter."""
+    stats = result.get("stats") or {}
+    downside_pct = max(0.0, -(stats.get("likely_trough_pct") or 0.0))
+    if not result.get("available"):
+        vote = "WAIT"          # no active dip to simulate against -- no read
+    elif downside_pct > 10:
+        vote = "AVOID"
+    elif downside_pct < 3:
+        vote = "BUY"
+    else:
+        vote = "WAIT"          # covers 5-10% explicitly, and the unstated 3-5% band by continuity
+    return {"voter": "bottom_scenarios", "vote": vote, "raw_confidence": 0.55,
+            "calibrated": False, "weight_until_calibrated": 0.0,
+            "independent_n": result.get("n_episodes", 0),
+            "rationale": "; ".join(result.get("plain", [])[:2])}

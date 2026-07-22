@@ -66,6 +66,7 @@ passphrase needed to read it — same pattern as research/rotation digests).
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -229,6 +230,7 @@ def main():
             universe_prices[t] = fe.re_engine.fetch_history(t)
         except Exception as e:
             print(f"[warn] skipping {t}: {e}")
+        time.sleep(fe.BATCH_TICKER_DELAY_SECONDS)
 
     today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     setups, skipped, gated = [], [], []

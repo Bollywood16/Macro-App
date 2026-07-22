@@ -67,6 +67,7 @@ import json
 import math
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, time as dtime, timezone
@@ -110,6 +111,11 @@ FUNCTION_URL = os.environ.get(
 # continuity (calibration groups by horizon_days) — nothing is renumbered.
 HORIZONS = [1, 5, 20, 60, 126, 252]
 BENCHMARK = "SPY"
+# Batch runs already process tickers strictly sequentially (plain for-loop,
+# no threading/asyncio) -- this adds a small pause between each ticker's
+# yfinance calls so a full-universe batch doesn't burst-hammer the rate
+# limit and risk a partial/failed forecast row.
+BATCH_TICKER_DELAY_SECONDS = 1.5
 NASDAQ_BENCHMARK = "QQQ"
 EPISODE_GAP = 20            # trading days; spec 7.4 item 5's example gap
 ANALOG_CANDIDATES = 120     # nearest neighbors considered before thinning
@@ -1106,6 +1112,8 @@ def main():
     tickers = [args.ticker.upper()] if args.ticker else [a["ticker"] for a in universe]
     label_by_ticker = {a["ticker"]: a["label"] for a in universe}
 
+    on_demand = args.ticker is not None
+
     universe_prices = {"SPY": spy_close}
     for t in tickers:
         if t in universe_prices:
@@ -1114,11 +1122,12 @@ def main():
             universe_prices[t] = re_engine.fetch_history(t)
         except Exception as e:
             print(f"[warn] skipping {t}: {e}")
+        if not on_demand:
+            time.sleep(BATCH_TICKER_DELAY_SECONDS)
 
     rotation_ctx = build_rotation_context(universe_prices)
     analog_map = load_analog_map()
 
-    on_demand = args.ticker is not None
     source = args.source or ("on_demand" if on_demand else "batch")
     for t in tickers:
         asset = {"ticker": t, "label": label_by_ticker.get(t, t)}
@@ -1143,6 +1152,8 @@ def main():
             print(f"{t}: {result['recommendation_label']} "
                   f"conf={result['confidence_label']} "
                   f"n={ens['n'] if ens else 0}")
+        if not on_demand:
+            time.sleep(BATCH_TICKER_DELAY_SECONDS)
 
 
 if __name__ == "__main__":

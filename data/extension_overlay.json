@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_utc": "2026-07-23 06:42 UTC",
+  "generated_utc": "2026-07-24 06:42 UTC",
   "params": {
    "ext_threshold_pct": 30.0,
    "rally_lookback_days": 126,
@@ -18,50 +18,50 @@
   ]
  },
  "current": {
-  "as_of": "2026-07-22",
+  "as_of": "2026-07-23",
   "symbol": "SMH",
-  "close": 586.91,
-  "ma200": 443.08,
-  "ext_pct": 32.5,
-  "trail_6m_pct": 50.3,
+  "close": 580.17,
+  "ma200": 444.3,
+  "ext_pct": 30.6,
+  "trail_6m_pct": 44.3,
   "trigger_active": true,
   "regime_tag": "rising",
   "nearest_analogs": [
    {
-    "date": "2003-08-22",
+    "date": "2020-11-24",
     "symbol": "SOX",
     "regime": "rising",
-    "ext_pct": 30.6,
-    "fwd_126d_pct": 13.09,
-    "max_dd_pct": -4.52
+    "ext_pct": 30.4,
+    "fwd_126d_pct": 21.09,
+    "max_dd_pct": -0.34
    },
    {
-    "date": "1995-09-25",
-    "symbol": "SOX",
+    "date": "2024-05-22",
+    "symbol": "SMH",
     "regime": "rising",
-    "ext_pct": 31.8,
-    "fwd_126d_pct": -36.63,
-    "max_dd_pct": -39.58
+    "ext_pct": 31.2,
+    "fwd_126d_pct": 2.51,
+    "max_dd_pct": -10.62
    },
    {
-    "date": "2009-07-23",
+    "date": "1997-01-06",
     "symbol": "SOX",
     "regime": "rising",
-    "ext_pct": 30.9,
-    "fwd_126d_pct": 8.13,
-    "max_dd_pct": -6.17
+    "ext_pct": 30.1,
+    "fwd_126d_pct": 26.33,
+    "max_dd_pct": 0.0
    }
   ]
  },
  "cohorts": {
   "rising": {
-   "n": 27,
-   "n_complete": 25,
-   "median_fwd_63d_pct": 5.92,
-   "median_fwd_126d_pct": 9.7,
-   "median_max_dd_pct": -10.62,
+   "n": 28,
+   "n_complete": 26,
+   "median_fwd_63d_pct": 7.5,
+   "median_fwd_126d_pct": 11.39,
+   "median_max_dd_pct": -10.78,
    "worst_max_dd_pct": -57.54,
-   "pct_positive_126d": 68.0
+   "pct_positive_126d": 69.0
   },
   "rolling": {
    "n": 0,
@@ -85,32 +85,32 @@
  "median_paths": {
   "rising": [
    100.0,
-   98.8,
-   97.96,
-   98.07,
-   103.22,
-   102.61,
-   102.64,
-   105.26,
-   105.54,
-   103.67,
-   100.61,
-   102.02,
-   105.59,
-   103.84,
-   103.64,
-   105.84,
-   107.34,
-   107.64,
-   104.7,
-   109.35,
-   106.6,
-   112.05,
-   114.27,
-   105.8,
-   106.45,
-   112.77,
-   109.7
+   99.02,
+   97.83,
+   98.65,
+   102.69,
+   102.27,
+   102.38,
+   105.19,
+   103.94,
+   102.26,
+   100.17,
+   103.59,
+   105.77,
+   106.81,
+   104.23,
+   106.28,
+   108.25,
+   109.11,
+   106.37,
+   109.92,
+   109.13,
+   113.42,
+   114.68,
+   106.7,
+   109.34,
+   113.47,
+   111.4
   ],
   "rolling": []
  },
@@ -1122,9 +1122,9 @@
    "trail_6m_pct": 42.6,
    "regime": "rising",
    "fwd_63d_pct": 23.22,
-   "fwd_126d_pct": null,
+   "fwd_126d_pct": 53.49,
    "max_dd_pct": -11.19,
-   "complete": false,
+   "complete": true,
    "path": [
     100.0,
     103.29,
@@ -1151,7 +1151,8 @@
     177.16,
     156.36,
     154.18,
-    154.32
+    154.32,
+    153.49
    ]
   },
   {
@@ -1160,7 +1161,7 @@
    "ext_pct": 40.7,
    "trail_6m_pct": 43.9,
    "regime": "rising",
-   "fwd_63d_pct": null,
+   "fwd_63d_pct": 24.57,
    "fwd_126d_pct": null,
    "max_dd_pct": 0.0,
    "complete": false,
@@ -1178,7 +1179,21 @@
     130.18,
     124.61,
     118.51,
-    125.24
+    124.57
+   ]
+  },
+  {
+   "date": "2026-07-23",
+   "symbol": "SOX",
+   "ext_pct": 35.7,
+   "trail_6m_pct": 53.5,
+   "regime": "rising",
+   "fwd_63d_pct": null,
+   "fwd_126d_pct": null,
+   "max_dd_pct": 0.0,
+   "complete": false,
+   "path": [
+    100.0
    ]
   }
  ]

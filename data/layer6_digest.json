@@ -1,7 +1,7 @@
 {
-  "generated_utc": "2026-07-25 06:41 UTC",
+  "generated_utc": "2026-07-28 08:01 UTC",
   "source": "top setups from data/scanner_digest.json, opportunity_score-ranked",
-  "scanner_digest_generated_utc": "2026-07-25 06:38 UTC",
+  "scanner_digest_generated_utc": "2026-07-28 08:01 UTC",
   "interval": "15m",
   "top_n": 5,
   "scanned_tickers": [
@@ -12,44 +12,44 @@
     {
       "ticker": "SMH",
       "interval": "15m",
-      "generated_utc": "2026-07-25 06:41 UTC",
-      "verdict": "NO-GO",
+      "generated_utc": "2026-07-28 08:01 UTC",
+      "verdict": "GO",
       "gates": {
-        "close_above_vwap": false,
+        "close_above_vwap": true,
         "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
+        "macd_histogram_positive": true
       },
       "facts": {
-        "bar_ts": "2026-07-24T15:45:00-04:00",
-        "close": 561.125,
-        "session_vwap": 563.5597,
-        "bar_volume": 3782077,
-        "prior_bar_volume": 1116227,
-        "relative_volume_vs_trailing_avg": 5.861,
-        "macd_histogram": -0.45014,
-        "rsi14": 38.28
+        "bar_ts": "2026-07-27T15:45:00-04:00",
+        "close": 548.31,
+        "session_vwap": 547.0904,
+        "bar_volume": 12215990,
+        "prior_bar_volume": 2354105,
+        "relative_volume_vs_trailing_avg": 15.216,
+        "macd_histogram": 1.86415,
+        "rsi14": 51.28
       },
       "warnings": []
     },
     {
       "ticker": "^SOX",
       "interval": "15m",
-      "generated_utc": "2026-07-25 06:41 UTC",
+      "generated_utc": "2026-07-28 08:01 UTC",
       "verdict": "NO-GO",
       "gates": {
         "close_above_vwap": false,
         "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
+        "macd_histogram_positive": true
       },
       "facts": {
-        "bar_ts": "2026-07-24T15:45:00-04:00",
-        "close": 11824.7734,
+        "bar_ts": "2026-07-27T15:45:00-04:00",
+        "close": 11556.4951,
         "session_vwap": NaN,
         "bar_volume": 0,
         "prior_bar_volume": 0,
         "relative_volume_vs_trailing_avg": null,
-        "macd_histogram": -6.1776,
-        "rsi14": 38.54
+        "macd_histogram": 45.53498,
+        "rsi14": 52.86
       },
       "warnings": []
     }

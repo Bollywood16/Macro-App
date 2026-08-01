@@ -1,5 +1,5 @@
 {
-  "generated_utc": "2026-07-31 08:22 UTC",
+  "generated_utc": "2026-08-01 07:38 UTC",
   "source": "top setups from data/scanner_digest.json, opportunity_score-ranked",
   "scanner_digest_generated_utc": "2026-07-30 07:43 UTC",
   "interval": "15m",
@@ -14,51 +14,51 @@
     {
       "ticker": "XLK",
       "interval": "15m",
-      "generated_utc": "2026-07-31 08:22 UTC",
-      "verdict": "NO-GO",
+      "generated_utc": "2026-08-01 07:38 UTC",
+      "verdict": "GO",
       "gates": {
         "close_above_vwap": true,
         "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
+        "macd_histogram_positive": true
       },
       "facts": {
-        "bar_ts": "2026-07-30T15:45:00-04:00",
-        "close": 175.71,
-        "session_vwap": 174.9154,
-        "bar_volume": 2156550,
-        "prior_bar_volume": 779652,
-        "relative_volume_vs_trailing_avg": 6.553,
-        "macd_histogram": -0.11607,
-        "rsi14": 60.74
+        "bar_ts": "2026-07-31T15:45:00-04:00",
+        "close": 175.28,
+        "session_vwap": 175.0569,
+        "bar_volume": 1093240,
+        "prior_bar_volume": 266874,
+        "relative_volume_vs_trailing_avg": 5.642,
+        "macd_histogram": 0.00132,
+        "rsi14": 52.45
       },
       "warnings": []
     },
     {
       "ticker": "SMH",
       "interval": "15m",
-      "generated_utc": "2026-07-31 08:22 UTC",
+      "generated_utc": "2026-08-01 07:38 UTC",
       "verdict": "NO-GO",
       "gates": {
-        "close_above_vwap": true,
+        "close_above_vwap": false,
         "volume_ge_prior_bar": true,
         "macd_histogram_positive": false
       },
       "facts": {
-        "bar_ts": "2026-07-30T15:45:00-04:00",
-        "close": 538.71,
-        "session_vwap": 536.2658,
-        "bar_volume": 1189998,
-        "prior_bar_volume": 339755,
-        "relative_volume_vs_trailing_avg": 3.892,
-        "macd_histogram": -0.46991,
-        "rsi14": 57.63
+        "bar_ts": "2026-07-31T15:45:00-04:00",
+        "close": 540.54,
+        "session_vwap": 544.3275,
+        "bar_volume": 1681225,
+        "prior_bar_volume": 449635,
+        "relative_volume_vs_trailing_avg": 5.834,
+        "macd_histogram": -0.61715,
+        "rsi14": 45.55
       },
       "warnings": []
     },
     {
       "ticker": "^SOX",
       "interval": "15m",
-      "generated_utc": "2026-07-31 08:22 UTC",
+      "generated_utc": "2026-08-01 07:38 UTC",
       "verdict": "NO-GO",
       "gates": {
         "close_above_vwap": false,
@@ -66,36 +66,36 @@
         "macd_histogram_positive": false
       },
       "facts": {
-        "bar_ts": "2026-07-30T15:45:00-04:00",
-        "close": 11299.3652,
+        "bar_ts": "2026-07-31T15:45:00-04:00",
+        "close": 11311.1543,
         "session_vwap": NaN,
         "bar_volume": 0,
         "prior_bar_volume": 0,
         "relative_volume_vs_trailing_avg": null,
-        "macd_histogram": -12.26965,
-        "rsi14": 58.0
+        "macd_histogram": -17.77343,
+        "rsi14": 43.23
       },
       "warnings": []
     },
     {
       "ticker": "XLU",
       "interval": "15m",
-      "generated_utc": "2026-07-31 08:22 UTC",
+      "generated_utc": "2026-08-01 07:38 UTC",
       "verdict": "NO-GO",
       "gates": {
         "close_above_vwap": false,
         "volume_ge_prior_bar": true,
-        "macd_histogram_positive": true
+        "macd_histogram_positive": false
       },
       "facts": {
-        "bar_ts": "2026-07-30T15:45:00-04:00",
-        "close": 44.65,
-        "session_vwap": 44.7013,
-        "bar_volume": 3088185,
-        "prior_bar_volume": 1358233,
-        "relative_volume_vs_trailing_avg": 4.939,
-        "macd_histogram": 0.03437,
-        "rsi14": 44.21
+        "bar_ts": "2026-07-31T15:45:00-04:00",
+        "close": 44.34,
+        "session_vwap": 44.518,
+        "bar_volume": 2837097,
+        "prior_bar_volume": 996149,
+        "relative_volume_vs_trailing_avg": 5.196,
+        "macd_histogram": -0.00796,
+        "rsi14": 35.13
       },
       "warnings": []
     }

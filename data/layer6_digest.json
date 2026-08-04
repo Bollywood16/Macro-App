@@ -1,5 +1,5 @@
 {
-  "generated_utc": "2026-08-01 07:38 UTC",
+  "generated_utc": "2026-08-04 08:04 UTC",
   "source": "top setups from data/scanner_digest.json, opportunity_score-ranked",
   "scanner_digest_generated_utc": "2026-07-30 07:43 UTC",
   "interval": "15m",
@@ -14,7 +14,29 @@
     {
       "ticker": "XLK",
       "interval": "15m",
-      "generated_utc": "2026-08-01 07:38 UTC",
+      "generated_utc": "2026-08-04 08:04 UTC",
+      "verdict": "NO-GO",
+      "gates": {
+        "close_above_vwap": true,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": false
+      },
+      "facts": {
+        "bar_ts": "2026-08-03T15:45:00-04:00",
+        "close": 178.09,
+        "session_vwap": 177.0388,
+        "bar_volume": 1257786,
+        "prior_bar_volume": 314836,
+        "relative_volume_vs_trailing_avg": 5.038,
+        "macd_histogram": -0.06655,
+        "rsi14": 59.04
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "SMH",
+      "interval": "15m",
+      "generated_utc": "2026-08-04 08:04 UTC",
       "verdict": "GO",
       "gates": {
         "close_above_vwap": true,
@@ -22,80 +44,58 @@
         "macd_histogram_positive": true
       },
       "facts": {
-        "bar_ts": "2026-07-31T15:45:00-04:00",
-        "close": 175.28,
-        "session_vwap": 175.0569,
-        "bar_volume": 1093240,
-        "prior_bar_volume": 266874,
-        "relative_volume_vs_trailing_avg": 5.642,
-        "macd_histogram": 0.00132,
-        "rsi14": 52.45
-      },
-      "warnings": []
-    },
-    {
-      "ticker": "SMH",
-      "interval": "15m",
-      "generated_utc": "2026-08-01 07:38 UTC",
-      "verdict": "NO-GO",
-      "gates": {
-        "close_above_vwap": false,
-        "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
-      },
-      "facts": {
-        "bar_ts": "2026-07-31T15:45:00-04:00",
-        "close": 540.54,
-        "session_vwap": 544.3275,
-        "bar_volume": 1681225,
-        "prior_bar_volume": 449635,
-        "relative_volume_vs_trailing_avg": 5.834,
-        "macd_histogram": -0.61715,
-        "rsi14": 45.55
+        "bar_ts": "2026-08-03T15:45:00-04:00",
+        "close": 545.5306,
+        "session_vwap": 538.6095,
+        "bar_volume": 463359,
+        "prior_bar_volume": 116425,
+        "relative_volume_vs_trailing_avg": 2.771,
+        "macd_histogram": 0.13103,
+        "rsi14": 55.8
       },
       "warnings": []
     },
     {
       "ticker": "^SOX",
       "interval": "15m",
-      "generated_utc": "2026-08-01 07:38 UTC",
+      "generated_utc": "2026-08-04 08:04 UTC",
       "verdict": "NO-GO",
       "gates": {
         "close_above_vwap": false,
         "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
+        "macd_histogram_positive": true
       },
       "facts": {
-        "bar_ts": "2026-07-31T15:45:00-04:00",
-        "close": 11311.1543,
+        "bar_ts": "2026-08-03T15:45:00-04:00",
+        "close": 11428.9072,
         "session_vwap": NaN,
         "bar_volume": 0,
         "prior_bar_volume": 0,
         "relative_volume_vs_trailing_avg": null,
-        "macd_histogram": -17.77343,
-        "rsi14": 43.23
+        "macd_histogram": 5.26791,
+        "rsi14": 55.91
       },
       "warnings": []
     },
     {
       "ticker": "XLU",
       "interval": "15m",
-      "generated_utc": "2026-08-01 07:38 UTC",
-      "verdict": "NO-GO",
+      "generated_utc": "2026-08-04 08:04 UTC",
+      "verdict": "GO",
       "gates": {
-        "close_above_vwap": false,
+        "close_above_vwap": true,
         "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
+        "macd_histogram_positive": true
       },
       "facts": {
-        "bar_ts": "2026-07-31T15:45:00-04:00",
-        "close": 44.34,
-        "session_vwap": 44.518,
-        "bar_volume": 2837097,
-        "prior_bar_volume": 996149,
-        "relative_volume_vs_trailing_avg": 5.196,
-        "macd_histogram": -0.00796,
-        "rsi14": 35.13
+        "bar_ts": "2026-08-03T15:45:00-04:00",
+        "close": 44.37,
+        "session_vwap": 44.3024,
+        "bar_volume": 3540015,
+        "prior_bar_volume": 1258360,
+        "relative_volume_vs_trailing_avg": 4.781,
+        "macd_histogram": 0.00565,
+        "rsi14": 52.19
       },
       "warnings": []
     }

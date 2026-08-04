@@ -46,6 +46,20 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// A6 (Phase A, forecast_engine.py): dip_context.py's own forecast rows
+// share their sibling ensemble rows' ticker AND as_of_ts, tagged via
+// model_version (mm-dipcontext-gate-*) until Phase B's `source` column
+// exists. Any surface that renders or lists "the" forecast for a ticker —
+// the TearSheet (get_latest_forecast), the Home watchlist (query_forecasts
+// view:"watchlist"), the unactioned-forecasts review queue
+// (list_unactioned_forecasts) — must not let one of these rows stand in
+// for the ensemble's: they're a second, much-smaller-sample model, scored
+// on its own ledger (Phase D), never a call to act on. One helper so the
+// exclusion can't drift between call sites.
+function excludeDipContextGate(q: any) {
+  return q.not("model_version", "ilike", "mm-dipcontext%");
+}
+
 // Only the DB's NOT NULL columns (minus ones with defaults) are required
 // here — everything else is validated by the table constraints themselves.
 const REQUIRED_FIELDS: Record<string, string[]> = {
@@ -212,11 +226,12 @@ Deno.serve(async (req) => {
         if (lErr) throw lErr;
         if (!latest) return json({ forecasts: [] });
 
-        const { data: forecasts, error: fErr } = await supabase
-          .from("forecasts").select("*")
-          .eq("ticker", payload.ticker)
-          .eq("as_of_ts", latest.as_of_ts)
-          .order("horizon_days");
+        const { data: forecasts, error: fErr } = await excludeDipContextGate(
+          supabase.from("forecasts").select("*")
+            .eq("ticker", payload.ticker)
+            .eq("as_of_ts", latest.as_of_ts)
+            .order("horizon_days"),
+        );
         if (fErr) throw fErr;
         return json({ forecasts });
       }
@@ -261,13 +276,28 @@ Deno.serve(async (req) => {
         // needs a thin per-row slice; mm-search's Q&A tool calls this same
         // op with no view and still needs the full row (p_positive,
         // evidence_json.recommendation_label), so "*" stays the default.
+        //
+        // Phase A fix: this used to alias `verdict` from
+        // evidence_json.tearsheet_extras.dip_context.verdict — dip_context
+        // is a second, much-smaller-sample voter (regime-matched dips
+        // only), and surfacing ITS verdict as the ticker's verdict is the
+        // same bug the TearSheet pill had (see index.html's tsVerdictHTML).
+        // Pull the ensemble's own recommendation_label instead — it's
+        // ticker-level (identical across every horizon row) same as
+        // dip_context's verdict was, so this is a like-for-like swap, not
+        // a behavior change in shape.
         const WATCHLIST_SELECT = `ticker, as_of_ts, effective_price, horizon_days,
           confidence_score, confidence_label,
-          verdict:evidence_json->tearsheet_extras->dip_context->verdict,
+          recommendation_label:evidence_json->recommendation_label,
           ret_1d:features_json->query_features->ret_1d`;
         let q = supabase.from("forecasts")
           .select(payload.view === "watchlist" ? WATCHLIST_SELECT : "*")
           .order("as_of_ts", { ascending: false }).limit(limit);
+        // The watchlist groups by as_of_ts and keeps one row per
+        // timestamp — left unfiltered, a dip_context row (same ticker,
+        // same as_of_ts as its sibling ensemble rows) could win that pick
+        // over the ensemble's. See excludeDipContextGate() above.
+        if (payload.view === "watchlist") q = excludeDipContextGate(q);
         if (payload.ticker) q = q.eq("ticker", payload.ticker);
         if (payload.model_version) q = q.eq("model_version", payload.model_version);
         if (payload.since) q = q.gte("as_of_ts", payload.since);
@@ -298,12 +328,13 @@ Deno.serve(async (req) => {
 
       case "list_unactioned_forecasts": {
         const limit = Number(payload.limit) > 0 ? Number(payload.limit) : 200;
-        const { data, error } = await supabase
-          .from("forecasts")
-          .select("*, decisions!left(id)")
-          .is("decisions.id", null)
-          .order("as_of_ts", { ascending: false })
-          .limit(limit);
+        const { data, error } = await excludeDipContextGate(
+          supabase.from("forecasts")
+            .select("*, decisions!left(id)")
+            .is("decisions.id", null)
+            .order("as_of_ts", { ascending: false })
+            .limit(limit),
+        );
         if (error) throw error;
         return json({ forecasts: (data ?? []).map(({ decisions, ...f }) => f) });
       }

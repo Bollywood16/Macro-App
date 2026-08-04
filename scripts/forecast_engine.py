@@ -125,6 +125,14 @@ MIN_REGIME_N = 8
 MIN_EPISODES_FOR_SIGNAL = 8
 INTRADAY_CONFIDENCE_DISCOUNT = 0.15
 MODEL_VERSION = "mm-forecast-v1.0-analog+regime-baserate"
+# A6: dip_context's own forecast rows, written alongside the ensemble's so
+# the gate can finally be scored on its own Brier ledger instead of only
+# ever steering (or, pre-fix, silently overriding) the ensemble's verdict.
+# There's no `source` column yet (that's Phase B) so model_version is the
+# interim way to filter these out of the ensemble's own calibration set —
+# Phase B's migration should backfill source='dip_context' for rows
+# carrying this model_version rather than re-deriving it from scratch.
+MODEL_VERSION_DIP_CONTEXT = "mm-dipcontext-gate-v1.0-regime-dip"
 
 FEATURE_FIELDS = [
     "ret_1d", "ret_5d", "ret_20d", "ret_60d", "ret_120d", "rsi14",
@@ -510,6 +518,35 @@ def recommendation_label(n, confidence_label, p_positive, expected_mae):
     return "watch_for_confirmation"
 
 
+def pick_basis_horizon(horizon_rows, horizon_confidence):
+    """REFINEMENT.md prime directive #3 fix, part 2 (A4): which horizon's
+    read the headline recommendation is actually based on. Previously
+    hard-coded to 5 trading days regardless of what 20d/60d/... showed — a
+    horizon with a much larger, better-supported edge (e.g. 84.6% at 20d
+    against a middling 5d read) never got to carry the call, and every row
+    reported recommendation_basis_horizon_days=5 even when its own edge
+    came from a different horizon entirely.
+
+    Picks the horizon with the largest directional edge among horizons
+    that clear the minimum-episode floor and aren't confidence='low'; ties
+    break toward the shorter (more actionable) horizon. Falls back to 5d,
+    then whatever horizon exists, if nothing clears the bar — so a
+    no-signal ticker's basis horizon is unchanged from before."""
+    best_h, best_edge = None, -1.0
+    for h, row in horizon_rows.items():
+        ens = row["ensemble"]
+        if not ens or ens["n"] < MIN_EPISODES_FOR_SIGNAL:
+            continue
+        if horizon_confidence.get(h, {}).get("label") == "low":
+            continue
+        edge = abs(ens["p_positive"] - 0.5)
+        if edge > best_edge or (edge == best_edge and (best_h is None or h < best_h)):
+            best_h, best_edge = h, edge
+    if best_h is not None:
+        return best_h
+    return 5 if 5 in horizon_rows else next(iter(horizon_rows), None)
+
+
 def build_drivers(ticker, query, regimes, intraday_proxy):
     b = []
     if pd.notna(query.get("ret_1d")):
@@ -667,6 +704,67 @@ def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
     return extras, committee_ballots
 
 
+def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
+                                  effective_price, as_of, dry_run):
+    """A6: write dip_context's own read as its own forecast row, same
+    schema as the ensemble's rows, one per horizon it actually computed
+    (21/63 trading days — its own HORIZONS, not the ensemble's). Tagged
+    via model_version (see MODEL_VERSION_DIP_CONTEXT) so it can be pulled
+    out of the ensemble's Brier ledger and scored on its own — the gate
+    has been steering (and, before this fix, silently overriding) the
+    tear sheet's headline for a while now with no record of whether doing
+    so has helped or hurt. Never blocks the main run: mm_journal() already
+    fails soft (warns, returns None) on any persistence error, same
+    posture as every other write in this file."""
+    created = []
+    if not dc_extras or not dc_extras.get("verdict"):
+        return created
+    verdict = dc_extras["verdict"]
+    for h_str, stats in (dc_extras.get("horizons") or {}).items():
+        if not stats:
+            continue
+        h = int(h_str)
+        payload = {
+            "ticker": ticker, "as_of_ts": as_of.isoformat(),
+            "effective_price": round(effective_price, 6),
+            "quote_snapshot_id": quote_snapshot_id,
+            "horizon_days": h, "benchmark": BENCHMARK,
+            "p_positive": stats["p_positive"],
+            "p_beat_benchmark": stats.get("p_beat_benchmark"),
+            "q20": stats["q20"], "q50": stats["q50"], "q80": stats["q80"],
+            "expected_mae": stats["expected_mae"],
+            "n_independent": stats["n"],
+            # dip_context.py's confidence_score is 0-100 (deflated_confidence's
+            # own scale); every other forecasts row's confidence_score is 0-1
+            # (see compute_confidence() above) -- convert so this column stays
+            # one consistent unit regardless of which model wrote the row.
+            "confidence_score": round((verdict.get("confidence_score") or 0) / 100.0, 4),
+            "confidence_label": verdict.get("confidence_label"),
+            "model_version": MODEL_VERSION_DIP_CONTEXT,
+            "features_json": {
+                "as_of": as_of.isoformat(), "source": "dip_context",
+                "regime": dc_extras.get("regime"),
+                "regime_match_depth": dc_extras.get("regime_match_depth"),
+            },
+            "evidence_json": {
+                "recommendation_label": verdict.get("verdict"),
+                "source_model": "dip_context",
+                "shadow_size": verdict.get("shadow_size"),
+                "display_range": verdict.get("display_range"),
+                "caveat": verdict.get("caveat"),
+                "plain": dc_extras.get("plain"),
+                "volume_forensics": dc_extras.get("volume_forensics"),
+                "current_drawdown_pct": dc_extras.get("current_drawdown_pct"),
+            },
+        }
+        if dry_run or not quote_snapshot_id:
+            created.append(None)
+            continue
+        resp = mm_journal("create_forecast", payload)
+        created.append((resp or {}).get("forecast", {}).get("id"))
+    return created
+
+
 # ---------------------------------------------------------------- run one
 
 
@@ -767,16 +865,36 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         regime_h = horizon_stats(close, spy_close_run, regime_pos, h, regime_tuples)
         horizon_rows[h] = {"ensemble": ens, "analog": analog_h, "regime": regime_h}
 
-    primary = horizon_rows.get(5) or horizon_rows.get(HORIZONS[0])
+    # Confidence is computed once per horizon here — and reused both for the
+    # basis-horizon pick right below and for each horizon's own evidence_json
+    # row further down — rather than being computed twice (once for horizon 5
+    # only, again per-row later) where the two copies could only ever match
+    # by accident of horizon 5 being hard-coded as "the" horizon (A4 fix).
+    horizon_confidence = {}
+    for h in HORIZONS:
+        ens_h = horizon_rows[h]["ensemble"]
+        concentrated_h = sample_is_concentrated(ens_h)
+        if ens_h:
+            conf_h, conf_label_h = compute_confidence(
+                ens_h["n"], ens_h["p_positive"],
+                (horizon_rows[h]["analog"] or {}).get("p_positive"),
+                (horizon_rows[h]["regime"] or {}).get("p_positive"),
+                analog_density, distribution_shift, intraday_proxy, regime_unknown,
+                concentrated_h)
+        else:
+            conf_h, conf_label_h = 0.0, "low"
+        horizon_confidence[h] = {"score": conf_h, "label": conf_label_h,
+                                  "concentrated": concentrated_h}
+
+    basis_h = pick_basis_horizon(horizon_rows, horizon_confidence)
+    primary = (horizon_rows.get(basis_h) or horizon_rows.get(5)
+               or horizon_rows.get(HORIZONS[0]))
     ens5 = primary["ensemble"]
-    primary_concentrated = sample_is_concentrated(ens5)
+    basis_conf = horizon_confidence.get(
+        basis_h, {"score": 0.0, "label": "low", "concentrated": False})
+    primary_concentrated = basis_conf["concentrated"]
     if ens5:
-        conf_score, conf_label = compute_confidence(
-            ens5["n"], ens5["p_positive"],
-            (primary["analog"] or {}).get("p_positive"),
-            (primary["regime"] or {}).get("p_positive"),
-            analog_density, distribution_shift, intraday_proxy, regime_unknown,
-            primary_concentrated)
+        conf_score, conf_label = basis_conf["score"], basis_conf["label"]
         rec_label = recommendation_label(ens5["n"], conf_label,
                                           ens5["p_positive"], ens5["expected_mae"])
     else:
@@ -800,10 +918,17 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
     if dc_extras and dc_extras.get("verdict"):
         dcv = dc_extras["verdict"]
         dc_n = (dc_extras.get("horizons", {}).get("21") or {}).get("n", 0)
+        # dip_context.py's INSUFFICIENT_EVIDENCE ("we cannot judge this
+        # either way") must stay a true abstention here, not a WAIT vote —
+        # calibrated=False gives it weight 0 in agreement_engine.score(),
+        # same treatment as any other uncalibrated voter: informative on
+        # the card, inert in the aggregate. A real BUY/WAIT/AVOID read
+        # still votes and carries its (now-unforced) confidence/shadow_size.
         all_ballots.append({
             "voter": "dip_context", "vote": dcv["verdict"],
             "raw_confidence": (dcv.get("confidence_score") or 0) / 100.0,
-            "calibrated": True, "independent_n": dc_n,
+            "calibrated": dcv["verdict"] != "INSUFFICIENT_EVIDENCE",
+            "independent_n": dc_n,
             "rationale": "; ".join(dc_extras.get("plain", [])[:2]),
         })
     all_ballots.append({
@@ -891,16 +1016,8 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
     created_forecast_ids = []
     for h in HORIZONS:
         ens = horizon_rows[h]["ensemble"]
-        concentrated_h = sample_is_concentrated(ens)
-        if ens:
-            conf_h, conf_label_h = compute_confidence(
-                ens["n"], ens["p_positive"],
-                (horizon_rows[h]["analog"] or {}).get("p_positive"),
-                (horizon_rows[h]["regime"] or {}).get("p_positive"),
-                analog_density, distribution_shift, intraday_proxy, regime_unknown,
-                concentrated_h)
-        else:
-            conf_h, conf_label_h = 0.0, "low"
+        hc = horizon_confidence[h]
+        conf_h, conf_label_h, concentrated_h = hc["score"], hc["label"], hc["concentrated"]
 
         # Moreira-Muir vol-managed signal: scale the horizon's median expected
         # return by realized vol scaled (sqrt-time) to that same horizon, so
@@ -916,7 +1033,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
 
         evidence_json = {
             "recommendation_label": rec_label,
-            "recommendation_basis_horizon_days": 5,
+            "recommendation_basis_horizon_days": basis_h,
             "model_action": LABEL_TEXT[rec_label],
             "why_it_triggered": drivers,
             "invalidation_risks": invalidation_risks,
@@ -979,12 +1096,17 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
             resp = mm_journal("create_forecast", payload)
             created_forecast_ids.append((resp or {}).get("forecast", {}).get("id"))
 
+    dip_context_forecast_ids = persist_dip_context_forecast(
+        ticker, tearsheet_extras.get("dip_context"), quote_snapshot_id,
+        effective_price, as_of, dry_run)
+
     return {
         "ticker": ticker, "effective_price": effective_price,
         "intraday_proxy": intraday_proxy, "recommendation_label": rec_label,
         "confidence_score": conf_score, "confidence_label": conf_label,
         "primary_horizon": primary, "quote_snapshot_id": quote_snapshot_id,
         "forecast_ids": created_forecast_ids, "horizon_rows": horizon_rows,
+        "dip_context_forecast_ids": dip_context_forecast_ids,
         "drivers": drivers, "invalidation_risks": invalidation_risks,
         "warnings": warnings, "regime": current_regime,
         "vol_21d": round(float(vol_21d_now), 4) if has_vol else None,

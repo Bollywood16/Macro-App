@@ -1,24 +1,22 @@
 {
   "ticker": "SPY",
-  "as_of": "2026-07-28",
-  "price": 739.09,
+  "as_of": "2026-08-04",
+  "price": 747.03,
   "halt": false,
   "halt_reasons": [],
-  "fills_blocked": true,
+  "fills_blocked": false,
   "guardrails": {
     "hy_oas": {
       "available": true,
-      "latest_pct": 2.79,
-      "21d_change_pct": 0.01,
+      "latest_pct": 2.84,
+      "21d_change_pct": 0.1,
       "level_threshold_pct": 8.0,
       "jump_threshold_pct": 1.5,
       "blowout": false
     },
     "blackout": {
-      "active": true,
-      "reasons": [
-        "fomc_date"
-      ]
+      "active": false,
+      "reasons": []
     }
   },
   "rebaseline_alert": {
@@ -27,14 +25,14 @@
     "warning": "build_anchor_price/build_anchor_date not set in config -- cannot evaluate re-baseline"
   },
   "tranche1": {
-    "eligible": false,
+    "eligible": true,
     "weekly_deploy_pct": 0.25,
-    "last_fomc_date": "2026-07-28",
-    "reason": "fills_blocked"
+    "last_fomc_date": "2026-07-29",
+    "reason": "ok"
   },
   "tranche2": {
     "trailing_high_20d": 754.95,
-    "drawdown_from_high_pct": -2.1,
+    "drawdown_from_high_pct": -1.05,
     "eligible_rungs": [],
     "all_rungs": [
       {
@@ -54,7 +52,7 @@
         "deploy_pct": 0.25
       }
     ],
-    "reason": "fills_blocked"
+    "reason": "ok"
   },
   "tranche3": {
     "eligible": false,
@@ -65,7 +63,7 @@
       "spy_trend": "above",
       "regime_break": false
     },
-    "reason": "fills_blocked"
+    "reason": "no_regime_break"
   },
   "warnings": []
 }

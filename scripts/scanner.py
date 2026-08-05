@@ -221,7 +221,7 @@ def main():
         vix = fe.re_engine.fetch_history("^VIX")
     except Exception:
         vix = pd.Series(dtype=float)
-    oas = fe.re_engine.fetch_hy_oas()
+    oas = fe.re_engine.fetch_credit_spread()  # BAA10Y -- see docs/CREDIT_SERIES.md
 
     universe_prices = {"SPY": spy_close}
     for a in universe:

@@ -53,8 +53,10 @@ class DataContext(Protocol):
         """VIX close series."""
         ...
 
-    def hy_oas(self) -> pd.Series:
-        """FRED high-yield OAS credit-spread series."""
+    def credit_spread(self) -> pd.Series:
+        """FRED credit-spread proxy series (BAA10Y -- Moody's Baa minus
+        10yr Treasury; investment-grade, not high-yield -- see
+        docs/CREDIT_SERIES.md for why this replaced ICE BofA HY OAS)."""
         ...
 
     def episodes(self, ticker: str) -> list | None:
@@ -82,7 +84,7 @@ class LiveDataContext:
         self._ohlcv_cache: dict[str, pd.DataFrame] = {}
         self._episodes_cache: dict[str, list | None] = {}
         self._vix_cache: pd.Series | None = None
-        self._hy_oas_cache: pd.Series | None = None
+        self._credit_spread_cache: pd.Series | None = None
 
     def close(self, ticker: str) -> pd.Series:
         if ticker not in self._close_cache:
@@ -99,10 +101,10 @@ class LiveDataContext:
             self._vix_cache = re_engine.fetch_history("^VIX")
         return self._vix_cache
 
-    def hy_oas(self) -> pd.Series:
-        if self._hy_oas_cache is None:
-            self._hy_oas_cache = re_engine.fetch_hy_oas()
-        return self._hy_oas_cache
+    def credit_spread(self) -> pd.Series:
+        if self._credit_spread_cache is None:
+            self._credit_spread_cache = re_engine.fetch_credit_spread()
+        return self._credit_spread_cache
 
     def episodes(self, ticker: str) -> list | None:
         if ticker in self._episodes_cache:

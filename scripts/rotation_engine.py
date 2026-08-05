@@ -29,6 +29,14 @@ Declared proxies (no free history exists for the real thing):
   - "vix" regime stands in for the CNN Fear & Greed index.
   - "rates" = 10-year Treasury yield 63-day direction (^TNX), standing
     in for rate-hike/cut expectations.
+  - "credit" = percentile-ranked 63-day change in a credit-spread proxy
+    (BAA10Y -- Moody's Baa minus 10yr Treasury; investment-grade, not
+    high-yield), fetched/classified via data_context/research_engine, not
+    this file's own copy -- see docs/CREDIT_SERIES.md items 2-4. The
+    macro dashboard's separate "High-Yield Spread" tile (macro_block())
+    still shows the real ICE BofA series by name for display -- that's
+    an honest, explicitly-labeled reading, not a regime input, and is
+    unaffected by this substitution.
 
 Output: data/rotation_digest.json
 """
@@ -47,6 +55,8 @@ if HERE not in sys.path:
 import regime_hmm  # noqa: E402  (data-driven comparison regime, fail-soft)
 import positioning_adapters  # noqa: E402  (Stage 2b: CFTC/CBOE, fail-soft)
 from deflated_confidence import deflated_confidence  # noqa: E402  (Stage 3b)
+import data_context  # noqa: E402  (credit read routed through here -- docs/CREDIT_SERIES.md item 4)
+import research_engine as re_engine  # noqa: E402  (credit_regime_series -- shared classifier)
 
 CONFIG_PATH = os.path.join(HERE, "rotation_config.json")
 OUTPUT_PATH = os.path.join(ROOT, "data", "rotation_digest.json")
@@ -54,8 +64,6 @@ OUTPUT_PATH = os.path.join(ROOT, "data", "rotation_digest.json")
 LOOKBACKS = {"1m": 21, "3m": 63, "6m": 126, "1y": 252}
 REGIME_MIN_DAYS = 10
 FWD = 63
-FRED_HY_OAS = ("https://fred.stlouisfed.org/graph/fredgraph.csv"
-               "?id=BAMLH0A0HYM2")
 
 
 def fetch_history(symbol):
@@ -72,19 +80,16 @@ def fetch_history(symbol):
     return c
 
 
-def fetch_hy_oas():
-    try:
-        df = pd.read_csv(FRED_HY_OAS)
-        df.columns = ["date", "oas"]
-        df["date"] = pd.to_datetime(df["date"])
-        df["oas"] = pd.to_numeric(df["oas"], errors="coerce")
-        return df.dropna().set_index("date")["oas"]
-    except Exception as e:
-        print(f"[warn] FRED unavailable: {e}")
-        return pd.Series(dtype=float)
-
-
 # --------------------------------------------------------------- regimes
+# Credit fetch + classification folded into the shared implementation per
+# docs/CREDIT_SERIES.md item 4 ("one fetcher, one classifier, one
+# threshold") -- this file no longer keeps its own fetch_hy_oas() /
+# series_regime_credit(). The credit series is fetched once in main() via
+# data_context.LiveDataContext().credit_spread() (BAA10Y) and classified
+# once via research_engine.credit_regime_series() into a date-indexed
+# label dict, looked up per episode below instead of recomputed per call.
+# vix/rates stay as their own point-in-time helpers, unchanged -- neither
+# was part of the credit-series problem this fold-in addresses.
 
 
 def series_regime_vix(vix, date):
@@ -101,15 +106,6 @@ def series_regime_rates(tnx, date):
         return "unknown"
     chg = float(s.iloc[-1] - s.iloc[-64])
     return "rising" if chg > 0.25 else ("falling" if chg < -0.25 else "flat")
-
-
-def series_regime_credit(oas, date):
-    s = oas.loc[:date]
-    if len(s) < 64:
-        return "unknown"
-    chg = float(s.iloc[-1] - s.iloc[-64])
-    return "widening" if chg > 0.25 else ("narrowing" if chg < -0.25
-                                          else "flat")
 
 
 # ------------------------------------------------------------- leadership
@@ -283,7 +279,7 @@ def fwd_return(panel, t, i, n=FWD):
     return round((a / b - 1) * 100, 2)
 
 
-def build_episodes(panel, cfg, lead, vix, tnx, oas):
+def build_episodes(panel, cfg, lead, vix, tnx, credit_labels):
     bench = cfg["benchmark"]
     sectors = [s["ticker"] for s in cfg["sectors"]]
     eps = []
@@ -301,7 +297,7 @@ def build_episodes(panel, cfg, lead, vix, tnx, oas):
                 "leadership": lead.iloc[i],
                 "vix": series_regime_vix(vix, date),
                 "rates": series_regime_rates(tnx, date),
-                "credit": series_regime_credit(oas, date),
+                "credit": credit_labels.get(date, "unknown"),
             },
             "fwd_63d_spy_pct": fwd_bench,
             "best_fwd_sector": best,
@@ -525,7 +521,8 @@ def main():
         tnx = fetch_history("^TNX")
     except Exception:
         tnx = pd.Series(dtype=float)
-    oas = fetch_hy_oas()
+    ctx = data_context.LiveDataContext()
+    oas = ctx.credit_spread()  # BAA10Y -- docs/CREDIT_SERIES.md items 2/4
 
     # Fail-soft: same contract as every other optional data source here.
     try:
@@ -540,7 +537,10 @@ def main():
 
     panel = build_panel(cfg, prices)
     lead, lead_spread = leadership_series(panel, cfg)
-    eps = build_episodes(panel, cfg, lead, vix, tnx, oas)
+    # Computed once, not once per episode -- see the "credit fetch +
+    # classification folded" comment above series_regime_vix().
+    credit_labels = dict(zip(panel.index, re_engine.credit_regime_series(oas, panel.index)))
+    eps = build_episodes(panel, cfg, lead, vix, tnx, credit_labels)
     claims, searched = mine(eps)
     today = panel.index[-1]
     run_durations = run_duration_stats(lead)
@@ -582,7 +582,7 @@ def main():
             "regimes": {
                 "vix": series_regime_vix(vix, today),
                 "rates": series_regime_rates(tnx, today),
-                "credit": series_regime_credit(oas, today),
+                "credit": credit_labels.get(today, "unknown"),
                 "positioning": (cftc_positioning["positioning_label"]
                                  if cftc_positioning else "unknown"),
                 "options": cboe_putcall["regime"] if cboe_putcall else "unknown",

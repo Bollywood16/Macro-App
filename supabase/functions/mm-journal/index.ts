@@ -72,11 +72,19 @@ function excludeDipContextGate(q: any) {
 
 // Only the DB's NOT NULL columns (minus ones with defaults) are required
 // here — everything else is validated by the table constraints themselves.
+// `regime_model_version` DOES have a DB default (so an insert that omits
+// it would still succeed) but is required here anyway, same reasoning as
+// `voter`: a low-level provenance/vintage tag every write path should set
+// deliberately, not fall through to silently. See
+// supabase/migrations/20260805120000_regime_model_version_column.sql —
+// must be applied BEFORE this function is deployed (same missing-column
+// failure mode voter's deploy-order note above already documents).
 const REQUIRED_FIELDS: Record<string, string[]> = {
   create_quote_snapshot: ["ticker", "price", "source"],
   create_forecast: [
     "ticker", "as_of_ts", "trading_date", "effective_price",
     "quote_snapshot_id", "horizon_days", "model_version", "voter",
+    "regime_model_version",
   ],
   create_decision: ["forecast_id", "action"],
   get_forecast: ["forecast_id"],

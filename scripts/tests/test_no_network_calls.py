@@ -44,7 +44,7 @@ def main():
     spy_close = fe.re_engine.fetch_history("SPY")
     spy_trend_df = fe.spy_trend_frame(spy_close)
     vix = fe.re_engine.fetch_history("^VIX")
-    oas = fe.re_engine.fetch_hy_oas()
+    oas = fe.re_engine.fetch_credit_spread()
     universe_prices = {"SPY": spy_close, TICKER: fe.re_engine.fetch_history(TICKER)}
     analog_map = fe.load_analog_map()
     asset = {"ticker": TICKER, "label": TICKER}
@@ -55,7 +55,7 @@ def main():
     # Prime: touch every ctx method compute will need, network allowed.
     ctx.ohlcv(TICKER)
     ctx.vix()
-    ctx.hy_oas()
+    ctx.credit_spread()
     ctx.episodes(TICKER)
     for sym in fe.resolve_benchmarks(TICKER, analog_map).values():
         ctx.close(sym)

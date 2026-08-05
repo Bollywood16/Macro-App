@@ -24,7 +24,7 @@ const GLOSSARY = {
   "conjunctions searched": "How many regime-condition combinations were tried before landing on this one — the denominator for judging if a claim might just be mined noise.",
   "HMM": "Hidden Markov Model — a statistical way of inferring which unobserved market 'regime' is most likely, from observed data alone.",
   "VIX": "Expected 30-day stock-market volatility. Under 20 = calm, over 30 = stressed.",
-  "HY OAS": "High-Yield Option-Adjusted Spread — the extra yield junk-bond investors demand over Treasuries. Widening = credit stress building.",
+  "Baa-Treasury proxy": "Moody's Baa corporate bond yield minus the 10-year Treasury yield — an investment-grade credit-spread proxy with a full multi-decade history (the high-yield spread this app used before 2026-08 is now licensing-limited on its data source to about 3 years, too short to compare against). Widening = credit stress building.",
   "p_positive": "The model's estimated probability the return over this horizon is positive.",
   "p_beat_benchmark": "The model's estimated probability this beats SPY over this horizon.",
   "q20": "20th-percentile outcome — a below-average case, worse than roughly 80% of historical analogs.",

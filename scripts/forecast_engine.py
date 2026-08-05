@@ -135,6 +135,17 @@ MODEL_VERSION = "mm-forecast-v1.0-analog+regime-baserate"
 # Phase B's migration should backfill source='dip_context' for rows
 # carrying this model_version rather than re-deriving it from scratch.
 MODEL_VERSION_DIP_CONTEXT = "mm-dipcontext-gate-v1.0-regime-dip"
+# Independent of MODEL_VERSION* above -- tracks the credit-regime INPUT's
+# vintage (source series + classification method), not the ensemble/
+# analog methodology, which didn't change here and will change again for
+# unrelated reasons later. See db/../supabase/migrations/
+# 20260805120000_regime_model_version_column.sql and
+# docs/CREDIT_SERIES.md item 5. Existing rows were backfilled to
+# 'regime-v0-oas-abs-0.25' by that migration; every row this constant
+# labels was computed under BAA10Y + trailing-percentile classification
+# (research_engine.credit_regime_series()). Calibration queries must
+# never pool rows across different regime_model_version values.
+REGIME_MODEL_VERSION = "regime-v1-baa10y-pctile-1260d-20-80"
 
 FEATURE_FIELDS = [
     "ret_1d", "ret_5d", "ret_20d", "ret_60d", "ret_120d", "rsi14",
@@ -319,18 +330,22 @@ def regime_series(idx, vix: pd.Series, oas: pd.Series, spy_trend_df: pd.DataFram
                         np.where(vix_al < 20, "calm",
                                  np.where(vix_al <= 30, "elevated", "stressed")))
 
-    oas_al = oas.reindex(idx).ffill()
-    chg = oas_al - oas_al.shift(EPISODE_GAP * 3)  # ~63d change, FRED HY OAS
-    credit_lab = np.where(chg.isna(), "unknown",
-                           np.where(chg > 0.25, "widening",
-                                    np.where(chg < -0.25, "narrowing", "flat")))
+    # Credit dimension: `oas` is now the BAA10Y credit-spread proxy (see
+    # re_engine.fetch_credit_spread()), classified by percentile against
+    # its own trailing distribution, not an absolute cutoff -- see
+    # re_engine.credit_regime_series()'s docstring and docs/CREDIT_SERIES.md
+    # for why (both the BAA10Y substitution and the percentile threshold).
+    # The variable is still named `oas` throughout this file for now,
+    # matching the existing parameter/local-variable convention -- see
+    # docs/CREDIT_SERIES.md for the naming-scope decision.
+    credit_lab = re_engine.credit_regime_series(oas, idx)
 
     spy_close_al = spy_trend_df["close"].reindex(idx).ffill()
     spy_ma200_al = spy_trend_df["ma200"].reindex(idx).ffill()
     spy_lab = np.where(spy_ma200_al.isna(), "unknown",
                         np.where(spy_close_al >= spy_ma200_al, "above", "below"))
 
-    return list(zip(vix_lab.tolist(), credit_lab.tolist(), spy_lab.tolist()))
+    return list(zip(vix_lab.tolist(), credit_lab, spy_lab.tolist()))
 
 
 def thin_sequential(positions, gap):
@@ -596,7 +611,7 @@ def build_drivers(ticker, query, regimes, intraday_proxy):
         b.append(f"Sector rotation tilt (63d group spread vs SPY) is "
                   f"{query['rotation_tilt_pct']:+.1f}pp, "
                   f"{query.get('regime_age_weeks', 0):.0f} weeks into this regime.")
-    b.append(f"Credit spreads (HY OAS, 63d) are {regimes[1]}.")
+    b.append(f"Credit spreads (Baa-Treasury proxy, 63d percentile) are {regimes[1]}.")
     if ticker != BENCHMARK and pd.notna(query.get("rel_spy_63d")):
         d = "outperforming" if query["rel_spy_63d"] >= 0 else "underperforming"
         b.append(f"{ticker} is {d} SPY by "
@@ -915,6 +930,7 @@ def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
             "confidence_score": round((verdict.get("confidence_score") or 0) / 100.0, 4),
             "confidence_label": verdict.get("confidence_label"),
             "model_version": MODEL_VERSION_DIP_CONTEXT, "voter": "dip_context",
+            "regime_model_version": REGIME_MODEL_VERSION,
             "features_json": {
                 "as_of": as_of.isoformat(), "source": "dip_context",
                 "regime": dc_extras.get("regime"),
@@ -1312,6 +1328,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
             "n_independent": ens["n"] if ens else 0,
             "confidence_score": conf_h, "confidence_label": conf_label_h,
             "model_version": MODEL_VERSION, "voter": "forecast",
+            "regime_model_version": REGIME_MODEL_VERSION,
             "features_json": features_json, "evidence_json": evidence_json,
         }
         if dry_run or not quote_snapshot_id:
@@ -1487,7 +1504,7 @@ def main():
         vix = re_engine.fetch_history("^VIX")
     except Exception:
         vix = pd.Series(dtype=float)
-    oas = re_engine.fetch_hy_oas()
+    oas = re_engine.fetch_credit_spread()  # BAA10Y -- see docs/CREDIT_SERIES.md
 
     tickers = [args.ticker.upper()] if args.ticker else [a["ticker"] for a in universe]
     label_by_ticker = {a["ticker"]: a["label"] for a in universe}

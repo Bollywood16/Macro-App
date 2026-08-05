@@ -1,8 +1,10 @@
 # Credit-series investigation — HY OAS truncation & replacement proposal
 
-**Status: §1's sentinel-matching bug is fixed and merged (`§0a` below). Everything
-else — the OAS→BAA10Y substitution, percentile threshold, rotation_engine fold-in,
-regime_model_version — remains proposal only, not implemented.** Requested off the back
+**Status: §1's sentinel-matching bug is fixed and merged (`§0a` below). The
+OAS→BAA10Y substitution, percentile threshold, rotation_engine fold-in, and
+regime_model_version versioning are now implemented (`§0b` below) — committed but not
+yet deployed (migration not yet run in Supabase, edge function not yet redeployed; see
+§0b's deployment-order note).** Requested off the back
 of `docs/C3_DESIGN.md` §2.4's finding that FRED's `BAMLH0A0HYM2` (ICE BofA US High-Yield
 OAS — the credit-regime input used everywhere in this codebase) only serves data from
 2023-08-07 forward. This document answers: how bad is it today, what would fix it, and
@@ -62,6 +64,54 @@ standing as the candidate explanation, unaffected by today's change. Sections 2�
 (BAA10Y substitution, percentile threshold, rotation_engine fold-in, versioning) are what
 would actually move that number, if anything does — this fix was a correctness
 prerequisite for replay, not a live-calibration lever.
+
+---
+
+## 0b. Items 2-5 implemented (2026-08-05)
+
+Answers §4's open questions 2-5 with an actual implementation, not just a
+recommendation. All four items moved together in one change, per §3.1's own warning
+that a partial swap leaves one voter silently disagreeing with the others:
+
+- **Source (Q2):** `research_engine.fetch_credit_spread()` fetches `BAA10Y`. The old
+  `fetch_hy_oas()` is kept, unchanged, deliberately — `deployment_ladder.py`'s blowout
+  guardrail still needs the real ICE OAS level, calibrated to that series' own scale
+  (§3.1 already flagged this as a reason the two fetchers can't just merge).
+- **Threshold (Q4):** resolved via the percentile route flagged as an option in §4,
+  not the naive rescaled-absolute-cutoff route from §2.2 — `credit_regime_series()`
+  classifies the 63-day change against its own trailing 1260-day (5yr) percentile
+  distribution (20th/80th cuts), sidestepping the OAS-vs-BAA10Y scale mismatch
+  entirely rather than retuning a borrowed cutoff.
+- **rotation_engine fold-in (Q3):** done, not left as a separate track. Its own
+  `fetch_hy_oas()`/`series_regime_credit()` copies are removed; it now reads credit
+  through `data_context.LiveDataContext.credit_spread()` and classifies via the same
+  `research_engine.credit_regime_series()` every other voter uses — one fetcher, one
+  classifier, per §3.1's "would need to move together."
+- **Versioning (Q5):** a dedicated `regime_model_version` column, not folded into
+  `model_version` — `supabase/migrations/20260805120000_regime_model_version_column.sql`
+  (additive, backfills existing rows to `regime-v0-oas-abs-0.25`, new rows get
+  `regime-v1-baa10y-pctile-1260d-20-80` from `forecast_engine.REGIME_MODEL_VERSION`).
+  Same shape as `trading_date`'s and `voter`'s migrations for the same reason: cheap
+  now, expensive after rows accumulate under the ambiguity.
+
+**A gap this pass found and fixed that the original proposal didn't anticipate:**
+`scanner.py` calls `forecast_engine.regime_series()` directly (for its
+`regime_transition` trigger) but had its own `fetch_hy_oas()` call feeding it — missed
+by the rotation_engine fold-in because it isn't `rotation_engine.py`. Left as-is, it
+would have fed the old truncated OAS series into the new percentile classifier, which
+needs 1260 trading days of history to produce anything but `"unknown"` — since OAS only
+has ~630 trading days on FRED, `scanner.py`'s credit dimension would have silently gone
+permanently `"unknown"`, breaking the credit leg of `regime_transition` detection. Fixed
+by pointing it at `fetch_credit_spread()` like every other caller.
+
+**Not yet done:** the migration hasn't been run against the live Supabase project, and
+the edge function (`index.ts` / the `.txt` mirror, both updated identically) hasn't been
+redeployed. Per the migration file's own deployment-order note, running code that sends
+`regime_model_version` before the column exists would fail every `create_forecast`
+call — so this is committed but must not be treated as live until 1-2 are done in order.
+Also unaddressed: `rotation_engine.py`'s existing `oas_al.diff(63)` local variable
+naming and the `MARKET_MEMORY_V2_BUILD.md` spec text still describing HY OAS by name in
+a couple of places (cosmetic, not functional — not chased down here).
 
 ---
 
@@ -367,25 +417,22 @@ out the actual sequencing question that decision depends on.
    §1.3 (SMH/2015-08-24 now correctly backs off from depth 3 to depth 1 instead of
    reporting 35 fake matches). Does not address the resolution~0 hypothesis — that's
    §0's live 3-year-window finding, untouched by this fix.
-2. **`BAA10Y` vs. accept-the-gap-honestly (`docs/C3_DESIGN.md` §2.4 option 1).** This
-   document's read: `BAA10Y` looks like the stronger choice given §2's evidence (no
-   directional flips, full coverage, correctly registers every major stress episode) over
-   accepting an honest but permanent 3-year-only credit dimension — but this is a
-   recommendation, not a decision made here.
-3. **`rotation_engine.py`'s separate copy (§3.1)** — fold into the same seam now, or treat
-   as a distinct, later cleanup? Its regime read currently has the identical truncation
-   problem and would keep it if untouched.
-4. **Threshold retuning.** If `BAA10Y` is adopted, does the classification threshold move
-   to the §2.2 scaled value (~0.10), get refit properly against `BAA10Y`'s own history
-   rather than borrowed from OAS's scale, or use a different mechanism (e.g. percentile-
-   based rather than an absolute-point cutoff, sidestepping the scale question entirely)?
-5. **Versioning mechanism (§3.2)** — extend `model_version`, or add a dedicated field
-   (e.g. `regime_model_version`) so a source/threshold change is independently trackable
-   from the ensemble model version, which may not change at the same time?
+2. ~~**`BAA10Y` vs. accept-the-gap-honestly.**~~ **Resolved 2026-08-05 — `BAA10Y`
+   adopted, see §0b.**
+3. ~~**`rotation_engine.py`'s separate copy.**~~ **Resolved 2026-08-05 — folded into
+   the shared `data_context`/`research_engine` seam, see §0b.**
+4. ~~**Threshold retuning.**~~ **Resolved 2026-08-05 — percentile-based (trailing
+   1260-day, 20th/80th cuts), not a rescaled absolute cutoff, see §0b.**
+5. ~~**Versioning mechanism.**~~ **Resolved 2026-08-05 — dedicated `regime_model_version`
+   column, additive migration, see §0b.**
 
 ---
 
-## 5. Not implemented here
+## 5. Implementation status
 
-No fetch code, threshold, or schema change has been made. Per the instruction this
-investigation was requested under, stopping before implementing either this or C3.
+Fetch code, classification, rotation_engine fold-in, and the schema change have all
+been made — see §0b for what and why. **Not yet done: the migration hasn't been run
+against the live Supabase project and the edge function hasn't been redeployed** (§0b's
+last paragraph) — this is committed code, not yet a live behavior change. C3 (the
+replay/backfill design this document was originally requested alongside) remains
+proposal-only, untouched by this pass.

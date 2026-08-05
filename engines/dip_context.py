@@ -33,7 +33,8 @@ Division of labor (same contract as episodes.py / relative_strength.py):
 Input:
   df         OHLCV DataFrame for the ticker itself; needs 'close','volume'.
   spy_close  SPY close Series, own full history (excess-return benchmark).
-  vix, oas   VIX close and FRED HY OAS Series, own full history.
+  vix, oas   VIX close and credit-spread proxy (BAA10Y, not high-yield OAS
+             -- see docs/CREDIT_SERIES.md) Series, own full history.
   ticker     str, for plain-language sentences.
 Output: JSON-serializable dict -> DipContextCard.
 """
@@ -85,9 +86,41 @@ VOL_LOOKBACK = 10         # recent window for volume forensics
 
 
 # ------------------------------------------------------- regime machinery
-# Mirrors forecast_engine.regime_series / research_engine's vix_regime /
-# credit_regime / spy_trend_regime — reimplemented locally, see module
-# docstring for why.
+# Mirrors forecast_engine.regime_series / research_engine.credit_regime_
+# series / vix_regime / spy_trend_regime — reimplemented locally, see
+# module docstring for why. The credit dimension's percentile-window
+# constants (CREDIT_PCTILE_*) and reasoning are owned by research_engine.
+# credit_regime_series()'s docstring / docs/CREDIT_SERIES.md item 3 --
+# kept in sync by hand here, same as everything else this function
+# mirrors. Change one, change both.
+CREDIT_PCTILE_WINDOW = 1260
+CREDIT_PCTILE_LOW = 20
+CREDIT_PCTILE_HIGH = 80
+
+
+def _credit_regime_series(oas: pd.Series, idx):
+    """Percentile-based credit label, mirrors research_engine.
+    credit_regime_series() exactly (same window/cuts) -- see that
+    function's docstring for the full reasoning (rolling not full-sample,
+    percentile not absolute, BAA10Y not HY OAS)."""
+    oas_al = oas.reindex(idx).ffill()
+    chg = oas_al.diff(63)
+    valid = chg.dropna()
+
+    pct_rank = pd.Series(np.nan, index=chg.index)
+    if len(valid) >= CREDIT_PCTILE_WINDOW:
+        arr = valid.to_numpy()
+        windows = np.lib.stride_tricks.sliding_window_view(arr, CREDIT_PCTILE_WINDOW)
+        last = windows[:, -1]
+        ranks = (windows < last[:, None]).mean(axis=1) * 100
+        computed = pd.Series(np.nan, index=valid.index)
+        computed.iloc[CREDIT_PCTILE_WINDOW - 1:] = ranks
+        pct_rank.loc[computed.index] = computed
+
+    return np.where(pct_rank.isna(), "unknown",
+                     np.where(pct_rank >= CREDIT_PCTILE_HIGH, "widening",
+                              np.where(pct_rank <= CREDIT_PCTILE_LOW, "narrowing", "flat")))
+
 
 def _regime_series(idx, vix: pd.Series, oas: pd.Series, spy_close: pd.Series):
     vix_al = vix.reindex(idx).ffill()
@@ -95,11 +128,7 @@ def _regime_series(idx, vix: pd.Series, oas: pd.Series, spy_close: pd.Series):
                         np.where(vix_al < 20, "calm",
                                  np.where(vix_al <= 30, "elevated", "stressed")))
 
-    oas_al = oas.reindex(idx).ffill()
-    chg = oas_al - oas_al.shift(63)
-    credit_lab = np.where(chg.isna(), "unknown",
-                           np.where(chg > 0.25, "widening",
-                                    np.where(chg < -0.25, "narrowing", "flat")))
+    credit_lab = _credit_regime_series(oas, idx)
 
     spy_al = spy_close.reindex(idx).ffill()
     spy_ma200 = spy_al.rolling(200).mean()

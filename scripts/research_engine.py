@@ -19,7 +19,19 @@ machine. For every asset in scripts/universe_config.json it computes:
   REGIMES at trigger (computed, not hand-tagged, except revisions)
     revisions  rising / rolling / unknown  (hand-tagged config; semis only)
     vix        calm (<20) / elevated (20-30) / stressed (>30)
-    credit     narrowing / flat / widening  (HY OAS 63-day change, FRED)
+    credit     narrowing / flat / widening -- percentile of the 63-day
+               change in the credit-spread proxy (BAA10Y) against its own
+               trailing distribution, not an absolute cutoff. See
+               credit_regime_series() below and docs/CREDIT_SERIES.md for
+               why (ICE BofA HY OAS, the prior source, is licensing-
+               truncated on FRED to 2023-08-07+ -- unusable for the
+               2005-2025 replay window and, it turns out, silently
+               confining live regime-conditioned matching to a 3-year
+               recency window too). fetch_hy_oas()/credit_regime() below
+               are kept, unchanged, ICE-OAS-based -- deployment_ladder.py
+               still uses them for its absolute-level blowout guardrail,
+               which is calibrated to OAS's scale specifically and is a
+               different question from regime classification.
     spy_trend  above / below SPY's own 200dma
 
   CLAIMS ("isms") — conjunction mining with a multiple-comparisons defense.
@@ -57,6 +69,7 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -76,7 +89,9 @@ COOLDOWN = 63
 NEWS_FLOOR = pd.Timestamp("2017-01-01")
 NEWS_CALL_CAP = 30          # hard cap on GDELT calls per run
 FRED_HY_OAS = ("https://fred.stlouisfed.org/graph/fredgraph.csv"
-               "?id=BAMLH0A0HYM2")
+               "?id=BAMLH0A0HYM2")  # legacy -- deployment_ladder.py only, see fetch_hy_oas() docstring
+FRED_CREDIT_SPREAD = ("https://fred.stlouisfed.org/graph/fredgraph.csv"
+                       "?id=BAA10Y")  # regime-classification input -- see fetch_credit_spread()
 
 TRIGGERS = {
     "ext200":   {"label": "Extension >30% over 200dma",
@@ -155,7 +170,22 @@ def fetch_trailing_pe(symbol: str):
 
 
 def fetch_hy_oas() -> pd.Series:
-    """FRED HY OAS, keyless CSV endpoint. Fail-soft -> empty series."""
+    """FRED HY OAS (ICE BofA US High-Yield, BAMLH0A0HYM2), keyless CSV
+    endpoint. Fail-soft -> empty series.
+
+    KEPT, UNCHANGED, deliberately -- as of 2026-08 this series is
+    licensing-truncated on FRED to 2023-08-07+ (see docs/CREDIT_SERIES.md),
+    which makes it unusable for regime classification against 2005-2025
+    history. It is kept only because deployment_ladder.py's blowout
+    guardrail (hy_oas_blowout()) checks the raw LEVEL of this specific
+    series against an absolute threshold calibrated to OAS's own scale
+    (e.g. 8.0 as a genuine high-yield blowout level) -- swapping that
+    guardrail's input to a lower-amplitude investment-grade proxy without
+    also re-deriving its threshold would silently defang a live halt
+    trigger, which is out of scope for the credit-regime-classification
+    work this file's fetch_credit_spread()/credit_regime_series() below
+    are for. Do not repoint new regime-classification callers here --
+    use fetch_credit_spread() instead."""
     try:
         df = pd.read_csv(FRED_HY_OAS)
         df.columns = ["date", "oas"]
@@ -165,6 +195,108 @@ def fetch_hy_oas() -> pd.Series:
     except Exception as e:
         print(f"[warn] FRED HY OAS unavailable: {e}")
         return pd.Series(dtype=float)
+
+
+def fetch_credit_spread() -> pd.Series:
+    """FRED credit-spread proxy: BAA10Y (Moody's Baa corporate bond yield
+    minus the 10yr Treasury yield). Full history back to 1986-01-02,
+    not ICE-licensed (not subject to the truncation above). Adopted as
+    the credit-regime input for both live forecasting and the 2005-2025
+    replay per docs/CREDIT_SERIES.md -- documented explicitly as the BEST
+    AVAILABLE FULL-HISTORY PROXY, not a claim that it's the same series
+    with more history: it's an investment-grade spread, not high-yield.
+    Evidence for the substitution (0.85 correlation with OAS's own
+    63-day change over the 2023-2026 overlap window, zero directional
+    widening<->narrowing flips in a full confusion-matrix check, correctly
+    registers every major credit-stress episode 2008-2022) is in that doc,
+    not repeated here. Fail-soft -> empty series, same posture as every
+    other fetcher in this module."""
+    try:
+        df = pd.read_csv(FRED_CREDIT_SPREAD)
+        df.columns = ["date", "oas"]
+        df["date"] = pd.to_datetime(df["date"])
+        df["oas"] = pd.to_numeric(df["oas"], errors="coerce")
+        return df.dropna().set_index("date")["oas"]
+    except Exception as e:
+        print(f"[warn] FRED credit spread (BAA10Y) unavailable: {e}")
+        return pd.Series(dtype=float)
+
+
+# Percentile window/cuts for credit_regime_series() below. Reasoning
+# (measured against real BAA10Y history, not picked blind -- see
+# docs/CREDIT_SERIES.md item 3): a 5-year (1260 trading day) trailing
+# window flags the 2008 GFC widening on 100% of its days (the single
+# most important episode to get right) and registers every other tested
+# stress episode (2011, 2015-16, 2020, 2022) directionally, without ever
+# needing more than 1260 days of history to start producing a label --
+# fully populated well before the 2005 replay window even starts (BAA10Y
+# begins 1986, so the window is warm by 1991). A shorter 2-year window
+# overreacts to whatever the last two years happened to look like (no
+# stable notion of "wide" survives a long calm stretch); a longer 10-year
+# window is not meaningfully more accurate on the same episodes and costs
+# 5 more years of unusable warmup for no measured benefit. 20th/80th
+# percentile cuts were chosen to keep the three-way split close to even
+# (empirically ~18% widening / ~16% narrowing / ~53% flat over the full
+# BAA10Y history at this window) rather than for any other reason.
+CREDIT_PCTILE_WINDOW = 1260
+CREDIT_PCTILE_LOW = 20
+CREDIT_PCTILE_HIGH = 80
+
+
+def credit_regime_series(oas: pd.Series, idx) -> list:
+    """Percentile-based credit regime label aligned to idx: widening /
+    narrowing / flat / unknown -- one label per idx date.
+
+    Classifies the 63-trading-day change in the credit-spread proxy
+    against its OWN TRAILING CREDIT_PCTILE_WINDOW-day distribution, a
+    rolling (never expanding, never full-sample) percentile rank. This
+    is deliberate and load-bearing: a full-sample percentile would rank
+    a 2005 observation using data through 2026, which is exactly the
+    lookahead class of bug this project has already found and fixed
+    twice elsewhere (analog_positions()'s unguarded candidate search,
+    the "unknown"=="unknown" regime-matching sentinel bug -- see
+    docs/C3_DESIGN.md and docs/CREDIT_SERIES.md). A rolling window keeps
+    every date's label computable from only what was already known by
+    that date.
+
+    Percentile, not an absolute point cutoff, because "wide" means a
+    different number of raw percentage points for an investment-grade
+    spread than for a high-yield one (see docs/CREDIT_SERIES.md item 3)
+    -- matches the percentile discipline used everywhere else in this
+    build (relative_strength.py's pct/z-score, scanner.py's
+    return_percentile trigger) rather than retuning an absolute
+    threshold around a scale question that doesn't need one.
+
+    "unknown" wherever the trailing window isn't fully populated yet
+    (the series' own first ~CREDIT_PCTILE_WINDOW trading days) or oas
+    has no coverage for idx at all -- an honest "not enough trailing
+    history to rank this," never a value.
+
+    Vectorized (numpy sliding_window_view, not a per-row Python loop) so
+    this is cheap enough to call once per ticker/asset without a caching
+    layer -- callers that would otherwise invoke this once per date in a
+    loop (e.g. research_engine.run()'s per-episode regimes_fn) should
+    still call it ONCE up front and look up individual dates from the
+    result, matching the pattern already used there for vix/spy_trend.
+    """
+    oas_al = oas.reindex(idx).ffill()
+    chg = oas_al.diff(63)
+    valid = chg.dropna()
+
+    pct_rank = pd.Series(np.nan, index=chg.index)
+    if len(valid) >= CREDIT_PCTILE_WINDOW:
+        arr = valid.to_numpy()
+        windows = np.lib.stride_tricks.sliding_window_view(arr, CREDIT_PCTILE_WINDOW)
+        last = windows[:, -1]
+        ranks = (windows < last[:, None]).mean(axis=1) * 100
+        computed = pd.Series(np.nan, index=valid.index)
+        computed.iloc[CREDIT_PCTILE_WINDOW - 1:] = ranks
+        pct_rank.loc[computed.index] = computed
+
+    labels = np.where(pct_rank.isna(), "unknown",
+                       np.where(pct_rank >= CREDIT_PCTILE_HIGH, "widening",
+                                np.where(pct_rank <= CREDIT_PCTILE_LOW, "narrowing", "flat")))
+    return labels.tolist()
 
 
 # ------------------------------------------------------------- indicators
@@ -239,6 +371,9 @@ def vix_regime(date, vix: pd.Series):
 
 
 def credit_regime(date, oas: pd.Series):
+    """KEPT, UNCHANGED, deliberately -- absolute-threshold OAS classifier.
+    deployment_ladder.py only (see fetch_hy_oas()'s docstring for why).
+    run()'s own regime tagging below uses credit_regime_series() instead."""
     if oas.empty:
         return "unknown"
     s = oas.loc[:date]
@@ -434,11 +569,18 @@ def run(universe, price_map, spy_df, vix, oas, rev_periods,
         if t not in price_map:
             continue
         df = indicators(price_map[t])
+        # Computed once per asset, not once per episode -- credit_regime_
+        # series() is vectorized but there's no reason to re-run it for
+        # every one of regimes_fn's calls (up to several hundred per
+        # asset across triggers/samplings/episodes) when the whole series
+        # is knowable up front. Mirrors vix_regime/spy_trend_regime's own
+        # per-call re-slice, just batched instead of repeated.
+        credit_labels = dict(zip(df.index, credit_regime_series(oas, df.index)))
 
-        def regimes_fn(date, _asset=asset):
+        def regimes_fn(date, _asset=asset, _credit_labels=credit_labels):
             out = {
                 "vix": vix_regime(date, vix),
-                "credit": credit_regime(date, oas),
+                "credit": _credit_labels.get(date, "unknown"),
                 "spy_trend": spy_trend_regime(date, spy_df),
             }
             if _asset.get("use_revision_tags"):
@@ -548,7 +690,7 @@ def main():
         vix = fetch_history("^VIX")
     except Exception:
         vix = pd.Series(dtype=float)
-    oas = fetch_hy_oas()
+    oas = fetch_credit_spread()  # BAA10Y -- see credit_regime_series() docstring
 
     evidence, digest = run(universe, price_map, spy_df, vix, oas,
                            rev_periods, pe_map, NewsBudget(NEWS_CALL_CAP))

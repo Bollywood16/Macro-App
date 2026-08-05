@@ -272,10 +272,21 @@ Deno.serve(async (req) => {
         // duplicate-key errors instead of reaching the real backlog. The
         // view does the anti-join (NOT EXISTS) plus a maturity pre-filter
         // in real SQL, which Postgres can actually plan correctly.
+        //
+        // select("*") here turned out to be its own outage: the genuinely-
+        // pending rows are post-Phase-A, tearsheet_extras-enriched --
+        // evidence_json/features_json average ~500KB/row, up to ~1MB, vs.
+        // ~2.4KB for the old (stuck, pre-enrichment) rows this op used to
+        // return. limit(500) of those is a ~250MB response, which is what
+        // was actually timing out -- not the query (18ms server-side per
+        // EXPLAIN ANALYZE), the payload. outcome_scoring.py's
+        // score_forecast() only ever reads id/ticker/as_of_ts/horizon_days/
+        // effective_price/q20/q80/p_positive; same fix pattern as
+        // query_forecasts' view:"watchlist" narrow select (bf30f21).
         const limit = Number(payload.limit) > 0 ? Number(payload.limit) : 500;
         const { data, error } = await supabase
           .from("pending_outcomes")
-          .select("*")
+          .select("id, ticker, as_of_ts, horizon_days, effective_price, q20, q80, p_positive")
           .order("as_of_ts", { ascending: true })
           .limit(limit);
         if (error) throw error;

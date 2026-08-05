@@ -192,6 +192,40 @@ Either way, the macro Parquet writer's `processed_date` for HY-OAS-sourced rows 
 honestly reflect "not available before 2023-08-07," not silently forward-fill or leave a
 gap that `as_of()` papers over.
 
+**Resolved 2026-08-05 — option 2 (`BAA10Y` substitution) chosen and implemented**, live
+in `forecast_engine.py`/`dip_context.py`/`rotation_engine.py`/`scanner.py`; see
+`docs/CREDIT_SERIES.md` for the full before/after measurement and rationale. Two
+follow-on requirements for C4's backfill that fall out of that implementation, flagged
+here so they aren't rediscovered mid-backfill:
+
+**Percentile-window warmup pushes C4's data-fetch start date back, independent of the
+replay window's own start.** `credit_regime_series()`'s regime classifier ranks the
+63-day credit change against its own trailing **1260-trading-day (~5 calendar year)**
+window — see `docs/CREDIT_SERIES.md` §0b. If C4's backfill fetches `BAA10Y` starting only
+at the replay window's own start (2005-01-01, per spec §2), the first ~5 years of the
+replay (2005-2010) get `credit_lab='unknown'` for the same structural reason the original
+HY-OAS bug did — a different truncation, same failure shape. **C4 must fetch `BAA10Y`
+starting no later than 1999-01-01** (BAA10Y itself has been available since 1986, so this
+is a fetch-range choice, not a data-availability limit) to give the window a full 5-year
+runway before 2005-01-01, plus roughly a year of margin. Audited every other trailing
+window in the codebase for the same risk (`grep` for `rolling(`/`.diff(`/`.shift(` across
+`scripts/*.py` and `engines/*.py`): the next-longest is 252 trading days (~1 calendar
+year — `hi252`/`roll_high`/`mom_12m`/`trail252`, several files), a quarter of credit's
+window. None of them need a similarly extended pre-2005 fetch; `BAA10Y`'s 1260-day window
+is the outlier by roughly 5x, not one case of a general pattern.
+
+**`deployment_ladder.py`'s blowout guardrail cannot run in replay before 2023-08-07.**
+`hy_oas_blowout()` deliberately still reads the real ICE BofA OAS series (kept, unchanged,
+in `research_engine.fetch_hy_oas()` — see `docs/CREDIT_SERIES.md` §0b) because its
+halt threshold is calibrated to that series' own scale; the `BAA10Y` swap above applies
+only to the regime-classification dimension, not this guardrail. Since ICE OAS itself
+has no data before 2023-08-07, **any C4 replay date before 2023-08-07 has no
+live-equivalent credit-blowout halt check available** — not a bug to chase during the
+backfill, a structural gap in what replay can faithfully reproduce for that guardrail
+specifically. Whoever builds C4 should surface this as an explicit caveat on any
+pre-2023-08-07 replay result that depends on `deployment_ladder.py`'s halt logic, rather
+than silently treating "guardrail didn't fire" as "guardrail checked and passed."
+
 ### 2.5 Flows / options tables are schema-only for now
 
 Confirmed via `grep` across `scripts/` and `engines/` — no fetch code exists for ETF flow
@@ -332,9 +366,10 @@ doesn't."
 
 ## 4. Open questions for review
 
-1. **BAMLH0A0HYM2 fix (§2.4)** — accept the gap with an honest `context_only` label, or
-   substitute `BAA10Y` with its own thresholds? Blocks how much of the 2005–2023 span of
-   the replay gets a real credit dimension.
+1. ~~**BAMLH0A0HYM2 fix.**~~ **Resolved 2026-08-05 — `BAA10Y` substituted, own
+   (percentile-based) thresholds, see §2.4 and `docs/CREDIT_SERIES.md`.** Two follow-on
+   requirements this creates for C4 specifically (fetch-start date, blowout-guardrail
+   replay gap) are now documented at the end of §2.4 — read before starting the backfill.
 2. **Adjusted-close as an accepted exception (§2.4)** — ratify explicitly, or does the
    store need to carry raw (unadjusted) prices + a separate corporate-actions table for
    stricter purity? The former is standard practice and far less work; flagging because

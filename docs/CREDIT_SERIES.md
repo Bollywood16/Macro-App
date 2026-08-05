@@ -104,6 +104,47 @@ has ~630 trading days on FRED, `scanner.py`'s credit dimension would have silent
 permanently `"unknown"`, breaking the credit leg of `regime_transition` detection. Fixed
 by pointing it at `fetch_credit_spread()` like every other caller.
 
+**Before/after measurement — the actual point of the exercise, run against live data,
+same 12 tickers and query date discipline as §1.2 (query date 2026-08-04, the most
+recent close as of this run):**
+
+| Ticker | Depth | n_regime | …pre-2023-08-07 | …post-2023-08-07 | Matched-date span |
+|---|---|---|---|---|---|
+| SMH | 3 | 163 | 133 | 30 | 2005-09-08 → 2026-07-27 |
+| SPY | 3 | 196 | 166 | 30 | 1998-05-01 → 2026-07-27 |
+| QQQ | 3 | 174 | 144 | 30 | 2004-06-15 → 2026-07-27 |
+| GLD | 3 | 137 | 107 | 30 | 2010-03-24 → 2026-07-27 |
+| XLK | 3 | 177 | 147 | 30 | 2004-03-29 → 2026-07-27 |
+| XLE | 3 | 177 | 147 | 30 | 2004-03-29 → 2026-07-27 |
+| XLF | 3 | 177 | 147 | 30 | 2004-03-29 → 2026-07-27 |
+| XLU | 3 | 177 | 147 | 30 | 2004-03-29 → 2026-07-27 |
+| IWM | 3 | 163 | 133 | 30 | 2005-08-31 → 2026-07-27 |
+| MGK | 3 | 115 | 85 | 30 | 2013-04-01 → 2026-07-27 |
+| RSP | 3 | 138 | 108 | 30 | 2009-12-22 → 2026-07-27 |
+| ^SOX | 3 | 192 | 162 | 30 | 2000-03-03 → 2026-07-27 |
+
+Current query tuple (macro-only, shared across all 12 tickers): `('calm', 'flat',
+'above')`.
+
+**Direct comparison to the pre-swap §1.2 table (26/26, zero exceptions, every match
+confined to post-2023-08-07):** the pool now spans decades, not 3 years, for every
+ticker whose own price history goes back far enough to have them — SPY's matched dates
+now reach back to 1998, ^SOX to 2000, most sector ETFs to 2004. Depth stays at 3 (the
+same "full 3-dimensional match" it reported before), but it now means what it claims to
+mean: **74-85% of each ticker's regime-conditioned matches are pre-2023-08-07** (85-166
+pre-cutoff matches out of 115-196 total, per ticker), genuinely conditioned on macro
+similarity across multiple market cycles (2004-08 credit boom, 2008 GFC, 2011, 2015-16,
+2020, 2022), not on shared recency.
+**This is the change the swap bought — not a marginal improvement, the qualitative
+difference §0's "26/26 confined to 3 years" finding was warning about.** The
+post-2023-08-07 count moved from 26 to 30 (same window, different classifier — the
+percentile method labels a handful of recent dates differently than the old absolute
+±0.25pp cutoff did; a secondary effect of adopting percentile classification, not of the
+source swap itself). This is a first read toward the ~0 resolution hypothesis flagged in
+§0/§1.2, not a resolution of it — whether the wider regime-conditioned pool actually
+moves calibration is a live-data question for after deployment, not answerable from this
+measurement alone.
+
 **Not yet done:** the migration hasn't been run against the live Supabase project, and
 the edge function (`index.ts` / the `.txt` mirror, both updated identically) hasn't been
 redeployed. Per the migration file's own deployment-order note, running code that sends

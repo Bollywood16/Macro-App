@@ -1,8 +1,9 @@
 # C3 Design — Point-in-Time Data Store
 
-**Status: investigation and proposal only. Nothing in this document has been implemented.**
-Gate per `MARKET_MEMORY_V2_BUILD.md` §10: reviewed and approved before C3 (the store) or
-C2 (`replay()`, which depends on it) get built.
+**Status: §1–§3 were investigation/proposal; approved, and §2/§3 are now implemented — see
+§5.** `scripts/pit_store.py` (`as_of()`, `PointInTimeDataContext`) and
+`scripts/pit_seed.py` exist and are tested. C2 (`replay()`, which depended on this
+landing first per `MARKET_MEMORY_V2_BUILD.md` §10's gate) is next — see §6.
 
 Scope, per §4 of the spec: (1) what's actually in the git-history JSON files today, (2) a
 proposed Parquet schema with `effective_date`/`processed_date` defined per table, (3) the
@@ -370,16 +371,17 @@ doesn't."
    (percentile-based) thresholds, see §2.4 and `docs/CREDIT_SERIES.md`.** Two follow-on
    requirements this creates for C4 specifically (fetch-start date, blowout-guardrail
    replay gap) are now documented at the end of §2.4 — read before starting the backfill.
-2. **Adjusted-close as an accepted exception (§2.4)** — ratify explicitly, or does the
-   store need to carry raw (unadjusted) prices + a separate corporate-actions table for
-   stricter purity? The former is standard practice and far less work; flagging because
-   it's currently an unstated assumption, not because there's an obvious problem with it.
-3. **`MGK`'s 2007-12-27 start (§2.3)** — **Resolved 2026-08-05:** documented as a 3-year
+2. ~~**Adjusted-close as an accepted exception (§2.4)**~~ **Resolved 2026-08-05 —
+   ratified as-is, per this section's own recommendation.** `write_prices()` in
+   `scripts/pit_store.py` takes whatever `research_engine.fetch_ohlcv()` returns
+   (`auto_adjust=True`) with no unadjusted/corporate-actions alternative built. Documented
+   explicitly in the module docstring, not left as an unstated assumption.
+3. ~~**`MGK`'s 2007-12-27 start (§2.3)**~~ **Resolved 2026-08-05:** documented as a 3-year
    hole, same handling as today's rotation panel ("the engine uses whatever exists on
    each date"). No proxy/synthetic series.
-4. **Flows/options tables (§2.5)** — confirm shipping the directory shape now with no data
-   (Phase F populates later) is preferred over deferring the schema entirely until Phase F
-   defines its own needs.
+4. ~~**Flows/options tables (§2.5)**~~ **Resolved 2026-08-05 — directory shape reserved
+   (`pit_store.FLOWS_TABLE`/`OPTIONS_TABLE` constants exist), no writer, ships empty.**
+   `as_of()`'s contract doesn't change when Phase F populates them later.
 
 **Correction to an earlier note in this doc:** a prior draft flagged live `HORIZONS`
 still including `126, 252` as possibly out of sync with the spec. That's not a
@@ -390,12 +392,63 @@ those rows already exist in the ledger and cost nothing extra to keep computing.
 
 ---
 
-## 5. Suggested next step
+## 5. Implementation status (2026-08-05)
 
-Question 1 (credit series) is now the higher-priority track — see
-`docs/CREDIT_SERIES.md`, since the same missing dimension may already explain the ~0
-resolution finding in the live calibration read, not just a replay-time concern. Question
-4 (flows/options schema-now-vs-later) is the remaining open item before implementing
-`as_of()`. Everything else in §2/§3 can be built as designed. Not starting implementation
-per the
-instruction this doc was requested under.
+Built exactly what §2/§3 specified, nothing more — `replay()` (C2) is still unbuilt and
+out of scope here, this section only covers the store and its context object.
+
+**Code:** `scripts/pit_store.py` (`as_of()`, `write_prices()`, `write_macro()`,
+`PointInTimeDataContext` implementing the same `DataContext` protocol
+`data_context.LiveDataContext` does — see that module's own docstring for the
+interchangeability contract C2 depends on). `scripts/pit_seed.py` is a one-shot local
+seed, explicitly **not** C4's chunked/resumable GitHub Actions backfill (own docstring
+says so) — it exists only to give this phase's tests real data instead of pure
+synthetic fixtures.
+
+**Seed run against live yfinance/FRED data, 2026-08-05** (`python3 scripts/
+pit_seed.py`): `BAA10Y` — 10,147 rows, 1986-01-02 → 2026-08-04, clears the
+`CREDIT_WARMUP_FLOOR` (1999-01-01) requirement from §2.4 with 13 years to spare. `VIX` —
+9,216 rows, 1990-01-02 → 2026-08-05. All 17 replay tickers seeded; every history-start
+date matches §2.3's table exactly, including `MGK`'s 2007-12-27 start correctly *not*
+covering 2005-01-01 (flagged by the seed script's own output, not silently accepted).
+9.5MB, 555 Parquet files total — small enough that `data/pit/` is gitignored (same
+treatment as the existing `data/*.json` digests: derived, regenerable, not meaningfully
+diffable in git), not committed.
+
+**Tests, all passing, no network:**
+- `scripts/tests/test_pit_as_of.py` — `as_of()` unit-level (§3.3 point 2): boundary
+  inclusivity, and the flows-table lag case named in §2.2 (`effective_date <= D` but
+  `processed_date > D` must still exclude the row) built as a hand-crafted fixture since
+  no real flows fetcher exists yet. Both empty-result paths (`never ingested` vs.
+  `data exists, none as-of this date`) raise `PITStoreError` with distinguishable
+  messages, per §2.3's recommendation.
+- `scripts/tests/test_pit_lookahead_canary.py` — the mutation/canary test, §3.3 point 1,
+  run against `PointInTimeDataContext` directly (not `replay()`, which doesn't exist
+  yet — that's C2's own acceptance criterion per §3.3 point 4, not duplicated here).
+  Verified the test isn't vacuous both ways: confirmed the shared runtime assertion
+  (§3.3 point 3, `_assert_no_lookahead`) independently catches a simulated broken
+  `as_of()`, then confirmed the byte-identical comparison *also* independently catches
+  the same leak with the runtime assertion additionally disabled — two independent
+  defenses, both proven to actually fire, not just present in the code.
+
+**Aside, unrelated to C3, noticed while running the full suite:**
+`scripts/tests/test_fail_loud_persistence.py` reads/writes `forecast_engine.
+PENDING_WRITES_PATH` directly — the real `data/pending_forecast_writes.jsonl` queue,
+not a temp path — and clears it as a side effect of a normal test run. Restored the
+real file's contents after each full-suite run in this session; flagging for whoever
+owns that test to isolate it behind a temp path, since running the suite currently
+touches a live production file that (per `e81edc4`) holds genuinely unflushed writes.
+
+---
+
+## 6. Suggested next step
+
+C3 (this document's scope — the store, `as_of()`, `PointInTimeDataContext`) is built
+and tested, per §5 above. **C2 (`replay(ticker, date)`) is next**, and per this
+document's own header, was gated on C3 landing first. `replay()` needs to: truncate
+every series/frame at the `PointInTimeDataContext` boundary before calling into
+`forecast_engine.run_one()` (§3.2's conclusion — never pass a full-length array with an
+index pointer), add the `assert query_pos == len(df) - 1` safety net §3.2 recommended,
+and extend the canary/mutation test up to the `replay()`/full-tear-sheet level (§3.3
+point 4) now that the function exists to test. C4 (the actual chunked backfill workflow)
+remains after that.

@@ -75,8 +75,8 @@ function excludeDipContextGate(q: any) {
 const REQUIRED_FIELDS: Record<string, string[]> = {
   create_quote_snapshot: ["ticker", "price", "source"],
   create_forecast: [
-    "ticker", "as_of_ts", "effective_price", "quote_snapshot_id",
-    "horizon_days", "model_version", "voter",
+    "ticker", "as_of_ts", "trading_date", "effective_price",
+    "quote_snapshot_id", "horizon_days", "model_version", "voter",
   ],
   create_decision: ["forecast_id", "action"],
   get_forecast: ["forecast_id"],
@@ -280,14 +280,21 @@ Deno.serve(async (req) => {
         // return. limit(500) of those is a ~250MB response, which is what
         // was actually timing out -- not the query (18ms server-side per
         // EXPLAIN ANALYZE), the payload. outcome_scoring.py's
-        // score_forecast() only ever reads id/ticker/as_of_ts/horizon_days/
-        // effective_price/q20/q80/p_positive; same fix pattern as
-        // query_forecasts' view:"watchlist" narrow select (bf30f21).
+        // score_forecast() only ever reads id/ticker/trading_date/
+        // horizon_days/effective_price/q20/q80/p_positive; same fix
+        // pattern as query_forecasts' view:"watchlist" narrow select
+        // (bf30f21).
+        //
+        // B6 fix (20260805014219_trading_date_column.sql): the view (and
+        // this select/order) now join on trading_date, not as_of_ts --
+        // as_of_ts is wall-clock execution time and can legitimately land
+        // on a different calendar day than the data it's about (confirmed
+        // for 92% of rows). trading_date is the correct scoring anchor.
         const limit = Number(payload.limit) > 0 ? Number(payload.limit) : 500;
         const { data, error } = await supabase
           .from("pending_outcomes")
-          .select("id, ticker, as_of_ts, horizon_days, effective_price, q20, q80, p_positive")
-          .order("as_of_ts", { ascending: true })
+          .select("id, ticker, trading_date, horizon_days, effective_price, q20, q80, p_positive")
+          .order("trading_date", { ascending: true })
           .limit(limit);
         if (error) throw error;
         return json({ forecasts: data ?? [] });

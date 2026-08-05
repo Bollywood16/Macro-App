@@ -705,7 +705,8 @@ def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
 
 
 def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
-                                  effective_price, as_of, dry_run):
+                                  effective_price, as_of, trading_date,
+                                  scheduler_drift_days, dry_run):
     """A6: write dip_context's own read as its own forecast row, same
     schema as the ensemble's rows, one per horizon it actually computed
     (21/63 trading days — its own HORIZONS, not the ensemble's). Tagged
@@ -728,6 +729,7 @@ def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
         h = int(h_str)
         payload = {
             "ticker": ticker, "as_of_ts": as_of.isoformat(),
+            "trading_date": trading_date, "scheduler_drift_days": scheduler_drift_days,
             "effective_price": round(effective_price, 6),
             "quote_snapshot_id": quote_snapshot_id,
             "horizon_days": h, "benchmark": BENCHMARK,
@@ -843,6 +845,9 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         retrieved_ts = as_of.isoformat()
         is_indicative = True
         source = "manual"
+        # A manual/intraday override genuinely IS "as of right now" -- there
+        # is no separate trading-day timestamp to prefer here.
+        trading_day = as_of.date()
     else:
         last_date = close.index[-1]
         close_dt = datetime.combine(last_date.date(), dtime(16, 0),
@@ -851,6 +856,31 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         retrieved_ts = as_of.isoformat()
         is_indicative = False
         source = "provider"
+        # B6 fix (revised): as_of_ts stays wall-clock -- it's the honest
+        # record of when the run actually executed, including GitHub
+        # Actions' scheduling delays (observed up to ~10h), and shouldn't
+        # be silently overwritten. trading_date (last_date, same source as
+        # provider_ts above) is the field that carries "which trading
+        # day's price/features this forecast is actually anchored to." The
+        # distinction matters beyond display: outcome_scoring.py's
+        # find_entry_pos() locates this forecast's entry bar by date --
+        # doing that against as_of_ts (which can drift onto the wrong
+        # weekday, not just weekends, whenever a run is delayed past
+        # midnight UTC) lands on the wrong bar and shifts the whole scoring
+        # window. trading_date is what scoring, calibration, and
+        # scorecards must join on from now on.
+        trading_day = last_date.date()
+    trading_date = trading_day.isoformat()
+    # scheduler_drift_days: how many calendar days late this run's
+    # wall-clock execution was relative to the trading day it's actually
+    # reporting on. Replaces an earlier draft (is_market_day) that only
+    # checked as_of_ts's own weekday -- that measures whether the
+    # SCHEDULER fired on a weekday, not whether the market was open or
+    # whether the data is stale, and would have missed the large majority
+    # of actual drift (a weekday-delayed run still "looks fine" under a
+    # weekday check; see the migration's own comment for the 92%-vs-323-
+    # row finding this replaced).
+    scheduler_drift_days = (as_of.date() - trading_day).days
 
     snap_payload = {
         "ticker": ticker, "price": round(effective_price, 6), "source": source,
@@ -1078,6 +1108,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
 
         payload = {
             "ticker": ticker, "as_of_ts": as_of.isoformat(),
+            "trading_date": trading_date, "scheduler_drift_days": scheduler_drift_days,
             "effective_price": round(effective_price, 6),
             "quote_snapshot_id": quote_snapshot_id,
             "horizon_days": h, "benchmark": BENCHMARK,
@@ -1100,7 +1131,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
 
     dip_context_forecast_ids = persist_dip_context_forecast(
         ticker, tearsheet_extras.get("dip_context"), quote_snapshot_id,
-        effective_price, as_of, dry_run)
+        effective_price, as_of, trading_date, scheduler_drift_days, dry_run)
 
     return {
         "ticker": ticker, "effective_price": effective_price,

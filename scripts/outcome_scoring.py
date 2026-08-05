@@ -12,13 +12,16 @@ TRADING-CALENDAR MATURITY, WITHOUT A CALENDAR LIBRARY
 A forecast's own ticker's price series IS a trading calendar for that
 ticker — the same "position + horizon" bar-counting convention already
 used by forecast_engine.horizon_stats / research_engine.build_episode.
-`as_of_ts`'s date is located in the freshly-fetched close series
-(searchsorted to the first bar on/after that date — for a manual/intraday
-forecast this is the same-day synthetic bar's real close, once time has
-passed); the forecast is matured once `horizon_days` further bars exist
-past that position. Not-yet-matured rows are left alone and re-checked
-next run — this job is idempotent and safe to run daily regardless of
-whether anything is actually due.
+`trading_date` (B6: the actual trading day this forecast's price/features
+are anchored to — never `as_of_ts`, which is wall-clock execution time and
+can legitimately land on a different calendar day, confirmed for 92% of
+rows) is located in the freshly-fetched close series (searchsorted to the
+first bar on/after that date — for a manual/intraday forecast this is the
+same-day synthetic bar's real close, once time has passed); the forecast
+is matured once `horizon_days` further bars exist past that position.
+Not-yet-matured rows are left alone and re-checked next run — this job is
+idempotent and safe to run daily regardless of whether anything is
+actually due.
 
 FIELDS (mirrors the `outcomes` table exactly, db/001_market_memory_schema.sql)
   end_price / abs_return / max_adverse_exc / max_favorable_exc — from the
@@ -49,14 +52,22 @@ PENDING_LIMIT = 500
 LOG_LOSS_EPS = 1e-6
 
 
-def find_entry_pos(close: pd.Series, as_of_ts: str):
+def find_entry_pos(close: pd.Series, trading_date: str):
+    # B6 fix: locate the entry bar by trading_date (the actual trading day
+    # this forecast's price/features are anchored to -- see
+    # 20260805014219_trading_date_column.sql), never as_of_ts. as_of_ts is
+    # wall-clock execution time and can legitimately land on a different
+    # calendar day (weekend or not) than the data it's about -- searching
+    # against it lands on the wrong bar and shifts the whole scoring
+    # window. Confirmed live: 92% of forecast rows have as_of_ts::date !=
+    # the correct trading day.
     try:
-        as_of = pd.Timestamp(as_of_ts)
+        td = pd.Timestamp(trading_date)
     except Exception:
         return None
-    if as_of.tzinfo is not None:
-        as_of = as_of.tz_localize(None)
-    pos = close.index.searchsorted(as_of.normalize())
+    if td.tzinfo is not None:
+        td = td.tz_localize(None)
+    pos = close.index.searchsorted(td.normalize())
     if pos >= len(close):
         return None
     return int(pos)
@@ -64,7 +75,7 @@ def find_entry_pos(close: pd.Series, as_of_ts: str):
 
 def score_forecast(row, close: pd.Series, spy_aligned: pd.Series):
     horizon = row["horizon_days"]
-    entry_pos = find_entry_pos(close, row["as_of_ts"])
+    entry_pos = find_entry_pos(close, row["trading_date"])
     if entry_pos is None:
         return None
     end_pos = entry_pos + horizon
@@ -129,8 +140,9 @@ def main():
     spy_close = fe.re_engine.fetch_history("SPY")
 
     # B3 guard: list_pending_outcomes now reads the pending_outcomes view
-    # (20260805010941_pending_outcomes_view.sql), which already pre-filters
-    # to as_of_ts + horizon_days calendar-elapsed AND no existing outcome
+    # (redefined by 20260805014219_trading_date_column.sql to join on
+    # trading_date, not as_of_ts -- see B6), which already pre-filters to
+    # trading_date + horizon_days calendar-elapsed AND no existing outcome
     # row -- so `pending` here is never "obviously too fresh" or "already
     # resolved" by construction. not_yet_matured still happens (the view's
     # calendar-day filter is a lower bound, not the real trading-day bar

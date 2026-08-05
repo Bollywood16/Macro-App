@@ -1,9 +1,8 @@
 # C3 Design — Point-in-Time Data Store
 
-**Status: §1–§3 were investigation/proposal; approved, and §2/§3 are now implemented — see
-§5.** `scripts/pit_store.py` (`as_of()`, `PointInTimeDataContext`) and
-`scripts/pit_seed.py` exist and are tested. C2 (`replay()`, which depended on this
-landing first per `MARKET_MEMORY_V2_BUILD.md` §10's gate) is next — see §6.
+**Status: §1–§3 were investigation/proposal; approved, and both C3 (§5) and C2 (§6) are
+now implemented and tested.** `scripts/pit_store.py`, `scripts/pit_seed.py`,
+`scripts/replay.py` all exist. C4 (the historical backfill workflow) is next — see §7.
 
 Scope, per §4 of the spec: (1) what's actually in the git-history JSON files today, (2) a
 proposed Parquet schema with `effective_date`/`processed_date` defined per table, (3) the
@@ -434,21 +433,72 @@ diffable in git), not committed.
 **Aside, unrelated to C3, noticed while running the full suite:**
 `scripts/tests/test_fail_loud_persistence.py` reads/writes `forecast_engine.
 PENDING_WRITES_PATH` directly — the real `data/pending_forecast_writes.jsonl` queue,
-not a temp path — and clears it as a side effect of a normal test run. Restored the
-real file's contents after each full-suite run in this session; flagging for whoever
-owns that test to isolate it behind a temp path, since running the suite currently
-touches a live production file that (per `e81edc4`) holds genuinely unflushed writes.
+not a temp path — and clears it as a side effect of a normal test run. **Fixed the same
+session it was found** (`fe.PENDING_WRITES_PATH` monkeypatched to a tempdir for the
+test's duration, restored in a `finally`, real file's content hash asserted unchanged
+before/after — verified the check fires both ways, not just present).
 
 ---
 
-## 6. Suggested next step
+## 6. C2 implementation (2026-08-05)
 
-C3 (this document's scope — the store, `as_of()`, `PointInTimeDataContext`) is built
-and tested, per §5 above. **C2 (`replay(ticker, date)`) is next**, and per this
-document's own header, was gated on C3 landing first. `replay()` needs to: truncate
-every series/frame at the `PointInTimeDataContext` boundary before calling into
-`forecast_engine.run_one()` (§3.2's conclusion — never pass a full-length array with an
-index pointer), add the `assert query_pos == len(df) - 1` safety net §3.2 recommended,
-and extend the canary/mutation test up to the `replay()`/full-tear-sheet level (§3.3
-point 4) now that the function exists to test. C4 (the actual chunked backfill workflow)
-remains after that.
+`scripts/replay.py`'s `replay(ticker, date)` — built per §3.2's conclusion exactly:
+every series handed to `forecast_engine.run_one()` (`close`, `spy_close`, `vix`, `oas`)
+comes from `PointInTimeDataContext(as_of=date)`, already filtered by `as_of()` before
+`run_one()` ever sees it — no full-length array with an index pointer anywhere in the
+call path. The `assert query_pos == len(df) - 1` safety net §3.2 recommended was added
+to `run_one()` itself (fires for *any* caller, not just `replay()`).
+
+Two changes to `forecast_engine.py`, both additive, needed to make `replay()`'s return
+value actually be "the bundle the app would have produced" rather than a subset of it:
+`run_one()` previously computed `tearsheet_extras` (dip_context/tech_read/
+bottom_scenarios/relative_strength/episodes/triggers/agreement — most of what a tear
+sheet shows) but only exposed it via a persisted `evidence_json`, never to the caller
+directly; now returned at the top level. `trading_date` was similarly persisted-only,
+now also returned.
+
+**Acceptance test result** (`MARKET_MEMORY_V2_BUILD.md` §4 C2's exact wording:
+`replay('SPY', <random 2019 date>)` byte-identical against a store truncated at that
+date) — **passing**, `scripts/tests/test_replay_acceptance.py`, run against the real
+seeded store from §5 (not synthetic fixtures) and a *physically* truncated copy (every
+row after the query date deleted from a separate store directory — stronger than the
+§3.3-point-1 mutation test, which keeps future rows present but implausible; this
+proves the comparison holds even when future data doesn't exist at all, not just when
+it's wrong):
+
+```
+replay('SPY', 2019-09-21): byte-identical, full store (8,436 SPY price rows, history
+through 2026-08-05) vs. truncated copy (6,710 rows, nothing after 2019-09-21).
+n_independent=129, recommendation_label='high_conviction_long_candidate',
+confidence_label='high' — identical on both sides down to every horizon row.
+```
+
+Spot-checked across 4 additional random 2019 dates (seeds 1/42/999/20250101 →
+2019-03-11, 2019-11-25, 2019-12-15, 2019-11-03): all byte-identical, all
+`high_conviction_long_candidate`/`high` (unsurprising — SPY's post-2009 bull market
+dominates its own regime-conditioned history at any 2019 query date, not a sign the
+test is insensitive; the truncated-vs-full row-count sanity check inside the test
+confirms real data absence each time, 1,667–1,861 rows depending on the date).
+
+**A real gap the test itself found and fixed, worth recording as a demonstration of why
+the *physical* truncation variant matters, not just the mutation one:** the first
+version of this test only built a truncated copy of `SPY`/`VIX`/`BAA10Y` (the series
+`replay()` fetches directly) and failed — `tearsheet_extras.relative_strength.rows`
+differed, 12 vs. 6. Cause: `compute_tearsheet_extras()` also fetches a `QQQ` benchmark
+series on demand (`resolve_benchmarks()`, for the Nasdaq-100 comparison row) via
+`ctx.close("QQQ")` — present in the full store (all 17 tickers seeded), absent from the
+truncated copy (never copied there). Not a `replay()` bug — a test-fixture coverage
+gap, fixed by adding `QQQ` to the truncated copy's required keys. Kept in the test file
+as a live illustration: a truncated-store comparison is only as strong as its coverage
+of every ticker a tear-sheet engine can reach for, not just the one being replayed.
+
+---
+
+## 7. Suggested next step
+
+C2 and C3 are both done and tested. **C4 (the historical backfill workflow) is next**
+— `MARKET_MEMORY_V2_BUILD.md` §4's spec: 17 tickers × 2005–2025 × 4 horizons × 2
+voters, writing to a separate `forecasts_replay` table, chunked/resumable GitHub
+Actions workflow, block-count reporting on completion. `scripts/pit_seed.py` (this
+document's §5) is explicitly not that workflow and doesn't become it — C4 needs its own
+chunking/resumability/reporting, not a bigger version of the local seed script.

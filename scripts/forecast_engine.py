@@ -1002,6 +1002,20 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
 
     df = build_feature_frame(close, spy_close_run, rotation_ctx, ticker)
     query_pos = len(df) - 1
+    # docs/C3_DESIGN.md §3.2: analog_positions() only ever excluded query_pos
+    # itself, never rows after it -- safe on the live path only because
+    # query_pos is always len(df)-1 there, so nothing exists after it to
+    # leak. That's true by construction two lines up, so this assert can
+    # never fire today; it's insurance against a future caller (C2's
+    # replay(), or anything else that reuses run_one()) passing a `close`
+    # series that extends past the query date with query_pos pointing
+    # partway through it -- turns silent lookahead contamination into an
+    # immediate crash instead of "excellent numbers, no error."
+    assert query_pos == len(df) - 1, (
+        f"run_one({ticker!r}): query_pos ({query_pos}) is not the last row "
+        f"of df ({len(df) - 1}) -- a caller handed this function data "
+        "extending past the query date, which analog_positions()/"
+        "normalize_matrix() have no internal defense against.")
     query = df.iloc[query_pos]
     effective_price = float(query["close"])
 
@@ -1372,7 +1386,8 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
     persistence_failures += [f"dip_context horizon {h}" for h in failed_dip_context_horizons]
 
     return {
-        "ticker": ticker, "effective_price": effective_price,
+        "ticker": ticker, "trading_date": trading_date,
+        "effective_price": effective_price,
         "intraday_proxy": intraday_proxy, "recommendation_label": rec_label,
         "confidence_score": conf_score, "confidence_label": conf_label,
         "primary_horizon": primary,
@@ -1384,6 +1399,15 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         "drivers": drivers, "invalidation_risks": invalidation_risks,
         "warnings": warnings, "regime": current_regime,
         "vol_21d": round(float(vol_21d_now), 4) if has_vol else None,
+        # C2 (docs/C3_DESIGN.md, MARKET_MEMORY_V2_BUILD.md §4): replay()'s
+        # entire purpose is "reconstruct the bundle the app would have
+        # produced" -- tearsheet_extras (dip_context/tech_read/
+        # bottom_scenarios/relative_strength/episodes/triggers/agreement) is
+        # computed above but previously only reached callers via the
+        # persisted evidence_json, never through this return value directly.
+        # Purely additive -- no existing caller reads a key that changed
+        # shape or meaning.
+        "tearsheet_extras": tearsheet_extras,
     }
 
 

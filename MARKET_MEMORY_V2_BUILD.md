@@ -24,19 +24,30 @@ Last updated: 2026-08-05
 | `657a46c` | **Phase C1** — `data_context.py`, `DataContext` Protocol + `LiveDataContext`. No engine calls the network at compute time |
 | `178d159` | Seed determinism regression test |
 | `a6aa3e3` | **Fix 5 (B4+B5)** — fail-loud persistence (write-ahead staging to `data/pending_forecast_writes.jsonl`, raises `PersistenceError`) + gap detector (batch exits non-zero if `ensemble_rows_created < tickers × horizons`) |
+| `3bce17f` | **Phase C3** — `scripts/pit_store.py` (`as_of()`, `PointInTimeDataContext`), `scripts/pit_seed.py`. See `docs/C3_DESIGN.md` §5. |
+| (this session) | **Phase C2** — `scripts/replay.py`'s `replay(ticker, date)`. Acceptance test passing against real seeded data — see `docs/C3_DESIGN.md` §7. |
 
 ### Permanent regression tests (all passing)
 
 - `scripts/tests/test_no_network_calls.py` — guards the C1 seam
 - `scripts/tests/test_bottom_scenarios_determinism.py`
-- `scripts/tests/test_fail_loud_persistence.py`
+- `scripts/tests/test_fail_loud_persistence.py` — isolated from the real
+  `data/pending_forecast_writes.jsonl` queue via a tempdir + before/after hash check
+- `scripts/tests/test_pit_as_of.py` — `as_of()` boundary/lag-case unit tests
+- `scripts/tests/test_pit_lookahead_canary.py` — mutation/canary test against
+  `PointInTimeDataContext`
+- `scripts/tests/test_replay_acceptance.py` — C2's own acceptance test
+  (`replay('SPY', <2019 date>)` byte-identical, full store vs. a physically
+  truncated copy). Skips (not fails) if `data/pit/` isn't seeded.
 
 ### Open — next work
 
-1. **C3 design writeup** (`docs/C3_DESIGN.md`) — investigation only, never ran. **Blocks C2/C3.**
-2. **C2** — `replay(ticker, date)`
-3. **C3** — point-in-time Parquet store, `as_of()`, git-history extraction
-4. **C4** — historical backfill (dedicated GH Actions workflow)
+1. ~~**C3 design writeup**~~ Done, reviewed, approved.
+2. ~~**C2** — `replay(ticker, date)`~~ Done — `scripts/replay.py`.
+3. ~~**C3** — point-in-time Parquet store, `as_of()`~~ Done — `scripts/pit_store.py`.
+   Git-history extraction was investigated and rejected as a data source (`docs/
+   C3_DESIGN.md` §1) — nothing to extract.
+4. **C4** — historical backfill (dedicated GH Actions workflow) — next
 5. **D** — scoring on the replay ledger
 6. **E / F / G / H** — bottom-tell library, flush + cross-asset + ATH + committee + event mode, output rebuild, handoff
 
@@ -208,7 +219,7 @@ Investigation and proposal only. **Do not implement until reviewed.** Must cover
    contaminated backtest does not error, it produces excellent numbers that get trusted
    for months.
 
-### C2 — `replay(ticker, date)`
+### C2 — `replay(ticker, date)` ✅ DONE (this session, `scripts/replay.py`)
 
 ```python
 def replay(ticker: str, date: date) -> TearsheetBundle:
@@ -216,12 +227,29 @@ def replay(ticker: str, date: date) -> TearsheetBundle:
     as_of() data. Deterministic: same inputs -> byte-identical output."""
 ```
 
+No `TearsheetBundle` type existed anywhere — implemented as the dict
+`forecast_engine.run_one()` already returns, extended this session to also carry
+`tearsheet_extras` at the top level (previously only reached a persisted
+`evidence_json`, never the caller). Always `dry_run=True` — writing to
+`forecasts_replay` is C4's job, not C2's.
+
 The live path becomes `replay(ticker, today)`.
 
 **Acceptance:** `replay('SPY', <random 2019 date>)` byte-identical when run against a
-store truncated at that date.
+store truncated at that date. **Passing** — `scripts/tests/test_replay_acceptance.py`,
+run against a real seeded store (not synthetic fixtures), a physically truncated copy
+(not merely a mutated one — every row after the query date is actually deleted from a
+separate store directory, not just present-and-ignored). Result, one representative run
+(seed fixed for reproducibility, also spot-checked across 4 other random 2019 dates,
+all identical): `replay('SPY', 2019-09-21)` — byte-identical between the full store
+(SPY history through 2026-08-05 still physically present) and the truncated copy
+(nothing after 2019-09-21 exists at all). `n_independent`=129,
+`recommendation_label`='high_conviction_long_candidate', `confidence_label`='high',
+identical on both sides down to every horizon row. Full detail and how a real gap in
+the test's own fixture coverage (a missing QQQ benchmark series) was caught and fixed
+before this passed: `docs/C3_DESIGN.md` §7.
 
-### C3 — point-in-time store
+### C3 — point-in-time store ✅ DONE (`docs/C3_DESIGN.md` §5)
 
 ```
 data/pit/prices/{ticker}/{year}.parquet     # OHLCV, adjusted as-of-date

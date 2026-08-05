@@ -21,6 +21,18 @@ Input:
   ticker          str, for plain-language sentences.
   dip_threshold   drawdown-from-252d-high that counts as "in a dip" —
                    scenarios only run against an active dip.
+  seed            Deterministic RNG seed. Pass an int (the caller derives it
+                   from ticker+trading_date+model_version — see
+                   forecast_engine.py's compute_tearsheet_extras) so the
+                   same forecast reproduces byte-identical Monte Carlo
+                   output. This was previously always
+                   np.random.default_rng() with no seed, meaning the exact
+                   same ticker/day/inputs produced different simulated
+                   scenarios on every run — not just a replay-determinism
+                   gap, a live production bug (two production runs of the
+                   same forecast disagree with each other for no reason a
+                   user can see). Leave None only for genuine ad hoc/
+                   exploratory use outside the forecast pipeline.
 Output: JSON-serializable dict -> Monte Carlo stat tiles + fan chart.
 """
 from __future__ import annotations
@@ -98,7 +110,7 @@ def _pool_trough_returns(paths: list, n: int, rng: np.random.Generator):
 
 
 def bottom_scenarios(df: pd.DataFrame, ticker: str, dip_threshold=DIP_THRESHOLD,
-                      horizon=HORIZON, n_sims=N_SIMS) -> dict:
+                      horizon=HORIZON, n_sims=N_SIMS, seed: int | None = None) -> dict:
     close = df["close"]
     if len(close) < 120:
         return {"ticker": ticker, "available": False,
@@ -120,7 +132,7 @@ def bottom_scenarios(df: pd.DataFrame, ticker: str, dip_threshold=DIP_THRESHOLD,
                                                    DEPTH_TOL, EPISODE_GAP)
     n_episodes = len(episode_paths)
 
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed)
     daily_rets = close.pct_change().dropna().to_numpy()
 
     w_hist = min(MAX_HIST_WEIGHT, MAX_HIST_WEIGHT * n_episodes / MIN_EPISODES_FULL_WEIGHT)

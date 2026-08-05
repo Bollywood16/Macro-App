@@ -63,6 +63,7 @@ before the secret exists).
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -636,8 +637,26 @@ def fetch_episode_library(ticker, dry_run):
     return (resp or {}).get("episodes")
 
 
+def deterministic_seed(*parts) -> int:
+    """A reproducible RNG seed from arbitrary string/value parts (e.g.
+    ticker, trading_date, model_version) -- NOT Python's builtin hash(),
+    which is randomized per-process by default (PYTHONHASHSEED) and would
+    give a different seed every run even for identical inputs. Used to
+    seed bottom_scenarios' Monte Carlo so the same forecast (same ticker,
+    same trading day, same model version) always simulates the same
+    scenarios -- previously np.random.default_rng() with no seed at all,
+    meaning two production runs of the identical forecast disagreed with
+    each other for no visible reason. Also what makes C2's replay()
+    byte-identical: replaying the same (ticker, date) must reproduce the
+    exact same seed, hence the exact same simulated paths."""
+    key = "|".join(str(p) for p in parts)
+    digest = hashlib.sha256(key.encode()).hexdigest()
+    return int(digest[:16], 16)  # first 64 bits of the digest
+
+
 def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
-                              universe_prices, analog_map, dry_run):
+                              universe_prices, analog_map, dry_run,
+                              mc_seed=None):
     """BUILD.md's tear-sheet engines, run once per ticker off one shared
     OHLCV fetch and folded into evidence_json (see run_one below) rather
     than a parallel pipeline — the 'extend the existing TearSheet' path.
@@ -671,7 +690,8 @@ def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
     except Exception as e:
         print(f"[warn] tech_read failed for {ticker}: {e}")
     try:
-        extras["bottom_scenarios"] = eng_bottom_scenarios.bottom_scenarios(ohlcv, ticker)
+        extras["bottom_scenarios"] = eng_bottom_scenarios.bottom_scenarios(
+            ohlcv, ticker, seed=mc_seed)
         committee_ballots.append(eng_bottom_scenarios.to_ballot(extras["bottom_scenarios"]))
     except Exception as e:
         print(f"[warn] bottom_scenarios failed for {ticker}: {e}")
@@ -820,25 +840,9 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
             ensemble_pos.append(pos)
     ensemble_pos.sort()
 
-    # BUILD.md tear-sheet engines: one shared OHLCV fetch per ticker feeds
-    # all five (dip_context needs volume; tech_read/bottom_scenarios need
-    # OHLC(V); relative_strength/episodes just need close, taken from the
-    # same frame for consistency). Kept out of the existing analog/regime
-    # path above entirely — that machinery stays on its original
-    # close-only Series so this can't regress it.
-    tearsheet_extras = {}
-    committee_ballots = []
-    ohlcv = None
-    try:
-        ohlcv = re_engine.fetch_ohlcv(ticker)
-        if intraday_proxy:
-            ohlcv = append_manual_price_ohlcv(ohlcv, manual_price)
-        tearsheet_extras, committee_ballots = compute_tearsheet_extras(
-            ticker, ohlcv, spy_close_run, vix, oas, universe_prices,
-            analog_map or {}, dry_run)
-    except Exception as e:
-        print(f"[warn] tear-sheet OHLCV fetch failed for {ticker}: {e}")
-
+    # Moved ahead of the tear-sheet engines block (was originally computed
+    # after it) so trading_date exists in time to seed bottom_scenarios'
+    # Monte Carlo deterministically below -- see deterministic_seed().
     as_of = datetime.now(timezone.utc)
     if intraday_proxy:
         provider_ts = None
@@ -881,6 +885,26 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
     # weekday check; see the migration's own comment for the 92%-vs-323-
     # row finding this replaced).
     scheduler_drift_days = (as_of.date() - trading_day).days
+
+    # BUILD.md tear-sheet engines: one shared OHLCV fetch per ticker feeds
+    # all five (dip_context needs volume; tech_read/bottom_scenarios need
+    # OHLC(V); relative_strength/episodes just need close, taken from the
+    # same frame for consistency). Kept out of the existing analog/regime
+    # path above entirely — that machinery stays on its original
+    # close-only Series so this can't regress it.
+    tearsheet_extras = {}
+    committee_ballots = []
+    ohlcv = None
+    try:
+        ohlcv = re_engine.fetch_ohlcv(ticker)
+        if intraday_proxy:
+            ohlcv = append_manual_price_ohlcv(ohlcv, manual_price)
+        mc_seed = deterministic_seed(ticker, trading_date, MODEL_VERSION)
+        tearsheet_extras, committee_ballots = compute_tearsheet_extras(
+            ticker, ohlcv, spy_close_run, vix, oas, universe_prices,
+            analog_map or {}, dry_run, mc_seed=mc_seed)
+    except Exception as e:
+        print(f"[warn] tear-sheet OHLCV fetch failed for {ticker}: {e}")
 
     snap_payload = {
         "ticker": ticker, "price": round(effective_price, 6), "source": source,

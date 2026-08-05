@@ -945,6 +945,21 @@ def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
                 "plain": dc_extras.get("plain"),
                 "volume_forensics": dc_extras.get("volume_forensics"),
                 "current_drawdown_pct": dc_extras.get("current_drawdown_pct"),
+                # docs/CREDIT_SERIES.md #6.2: this voter's evidence_json had no
+                # sample-provenance fields at all (no depth, no date range) --
+                # a voter whose sample can't be dated or located can't be
+                # audited later. regime_match_depth already lived in
+                # features_json; mirrored here too so a query reading
+                # evidence_json for both voters (this one and 'forecast',
+                # whose regime_match_depth lives in evidence_json -- see
+                # evidence_json above in run_one()) gets the same field in
+                # the same place regardless of which voter wrote the row.
+                "regime_match_depth": dc_extras.get("regime_match_depth"),
+                "sample_size": {
+                    "n": stats["n"],
+                    "date_start": stats.get("date_start"),
+                    "date_end": stats.get("date_end"),
+                },
             },
         }
         if dry_run or not quote_snapshot_id:

@@ -170,7 +170,7 @@ def _matched_positions(regime_tuples, dip_positions, current_tuple, gap, min_n):
 
 def _horizon_stats(close: pd.Series, spy_close_aligned: pd.Series, positions, horizon):
     n = len(close)
-    rets, excess, mae = [], [], []
+    rets, excess, mae, used_pos = [], [], [], []
     for pos in positions:
         end = pos + horizon
         if end >= n:
@@ -182,12 +182,22 @@ def _horizon_stats(close: pd.Series, spy_close_aligned: pd.Series, positions, ho
         ret = float(window.iloc[-1])
         rets.append(ret)
         mae.append(float(window.min()))
+        used_pos.append(pos)
         se, ee = spy_close_aligned.iloc[pos], spy_close_aligned.iloc[end]
         if pd.notna(se) and pd.notna(ee) and se > 0:
             excess.append(ret - float(ee / se - 1))
     if not rets:
         return None
     s = pd.Series(rets)
+    # docs/CREDIT_SERIES.md #6.2: mirrors forecast_engine.horizon_stats()'s
+    # date_start/date_end -- previously omitted here, so this voter's sample
+    # provenance (which dates it's actually drawn from) was never recorded
+    # anywhere, live or in the forecasts row. Entry dates of the positions
+    # that survived the horizon's end<n filter, same definition as the
+    # ensemble voter uses, so the two are comparable field-for-field.
+    episode_dates = [close.index[p] for p in used_pos]
+    date_start = min(episode_dates).date().isoformat() if episode_dates else None
+    date_end = max(episode_dates).date().isoformat() if episode_dates else None
     return {
         "n": len(rets),
         "p_positive": round(float((s > 0).mean()), 4),
@@ -199,6 +209,8 @@ def _horizon_stats(close: pd.Series, spy_close_aligned: pd.Series, positions, ho
         "expected_mae": round(float(np.mean(mae)), 4),
         "mean_excess_return": (round(float(np.mean(excess)), 4)
                                 if excess else None),
+        "date_start": date_start,
+        "date_end": date_end,
     }
 
 

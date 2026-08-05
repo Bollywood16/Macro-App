@@ -263,7 +263,16 @@ Display permanently:
 - **Per-horizon** calibration, sharpness, resolution, and AUC — this is the deciding
   evidence for the confidence-gating question (see below)
 - **Cost of WAIT** — forward return of everything gated, and what shadow size returned
-- **Gate scorecard** — `voter='forecast'` vs `voter='dip_context'` Brier, head to head
+- **Gate scorecard** — `voter='forecast'` vs `voter='dip_context'` Brier, head to head.
+  **Caveat, added 2026-08-05 (`docs/CREDIT_SERIES.md` §7.4):** `dip_context`'s
+  confidence label is frozen at a per-ticker constant for most (ticker, day) pairs —
+  14 of 17 replay tickers show it fixed at "low / likely mined" regardless of that
+  day's actual dip evidence, set entirely by `decades_cap` (the ticker's listing date)
+  and `depth` (which lands on 3 for the common case). A Brier comparison keyed on that
+  label is partly comparing *which tickers happen to clear a fixed consistency bar*,
+  not *how good the gate's judgment is on a given day*. Stratify by ticker (or at
+  minimum by `decades_cap`) before drawing any conclusion from this comparison, or it
+  will credit/blame the gate for something fixed before the replay window starts.
 - **Regime-conditioning value** — regime-conditioned (`regime_match_depth ≥ 1`) vs.
   unconditioned (depth-0) Brier/hit-rate, **split by how common the query regime tuple
   is** (its own historical match share, tertiled — see `docs/CREDIT_SERIES.md` §6.5).
@@ -394,10 +403,22 @@ Robinhood-clean single-focus screens, one primary action per view.
 | `p_positive 0.44` | slightly worse than a coin flip |
 | `q20/q80` | rough range |
 
-**Label discipline.** Three separate incidents traced to fields whose names meant
+**Label discipline.** Four separate incidents traced to fields whose names meant
 something other than what they measured: `regime_episode_count` surfaced as the sample
-size, `as_of_ts` treated as the trading day, `mean(q80−q20)` labelled "sharpness". Any
-field whose name could be misread gets renamed at the source, not papered over in the UI.
+size, `as_of_ts` treated as the trading day, `mean(q80−q20)` labelled "sharpness", and
+`dip_context`'s `confidence_label` presented as a per-forecast read of today's evidence
+when for most (ticker, day) pairs its value is fixed the moment the ticker is chosen —
+see `docs/CREDIT_SERIES.md` §7: 14 of 17 replay tickers show the label frozen at "low /
+likely mined" across every sample size from 1 to 500, because the two inputs actually
+setting it (`decades_cap`, fixed at the ticker's listing date; `depth`, which lands on 3
+for the common case regardless of ticker) never move on any given day, and "high" is
+mathematically unreachable at `depth=3` for any ticker at all. Any field whose name
+could be misread gets renamed at the source, not papered over in the UI. **General
+rule from the 4th incident:** if a field's value cannot vary for a given ticker (i.e.
+its range is fully determined by a ticker-level constant, not by that day's inputs), it
+must be rendered as a property of the ticker (e.g. "this ticker's dip-model bar is
+high") — never phrased as a finding about today's forecast specifically. `glossary.py`
+should check this at the field level, not rely on each caller remembering to check.
 
 ### Card structure
 

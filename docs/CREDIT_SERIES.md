@@ -658,3 +658,135 @@ distinguish "the regime dimension doesn't help" from "the regime dimension only 
 when it's rare enough to matter." Tuple definition and bucket boundaries are
 unchanged by this finding, per instruction — this is a measurement recommendation for
 Phase D, not a redesign.
+
+---
+
+## 7. §6.1 escalated — `dip_context`'s confidence label is a ticker property, not a per-forecast finding
+
+§6.1 found SMH's label frozen at "low / likely mined" across n=1..500 at today's
+consistency. The question raised in response: is this SMH-specific, or does it hold
+across the replay universe — and if most tickers show it, the field isn't measuring
+"today's evidence" at all, it's measuring which ticker this is. Answered by running
+the same sweep for all 17 replay tickers (2026-08-05, live data, no thresholds
+changed):
+
+### 7.1 Two separate ceilings, both fixed by ticker/formula structure, neither by the day's evidence
+
+**"high" (score ≥ 70) is mathematically unreachable at `depth=3`, for any ticker, on
+any day, at any consistency — not empirically rare, provably impossible.** The base
+formula's non-consistency factors at depth 3 are `0.85³ × min(1, decades/4)`. Even at
+the two best-case inputs simultaneously (`consistency=1.0`, the logical maximum, and
+`decades≥4`, the highest any ticker's own listing history can ever supply — see table
+below), the base score tops out at `100 × 1.0 × 0.6141 × 1.0 = 61.41`, and the
+deflation multiplier only ever multiplies that down further (max value 1). 61.41 < 70
+for every possible input. `depth=3` is exactly the depth §6.5 found live queries
+landing on for common regimes — so for the queries this gate actually sees most often,
+"high" is dead code, not a rare outcome.
+
+**"moderate" (score ≥ 40) is reachable, but the bar is a fixed number per ticker,
+set entirely by listing date, not by anything in the forecast being evaluated:**
+
+| decades_cap | Tickers (17) | Min. consistency to ever reach "moderate" at depth 3 |
+|---|---|---|
+| 4 (listed ≤1999, so 1990s+2000s+2010s+2020s reachable) | ^SOX, SPY, QQQ, XLK, XLF, XLV, XLE, XLI, XLY, XLP, XLU, XLB (12) | **0.651** |
+| 3 (listed 2000–2009, one fewer decade reachable forever) | SMH, GLD, RSP, IWM, MGK (5) | **0.868** |
+
+Every ticker in this app's replay universe launched after 1993, so `decades_cap=4` is
+already the ceiling anyone can ever reach (a 5th decade, the 1980s, is structurally
+unreachable for all 17) — this table is a complete partition, not a sample. **The
+5 tickers listed 2000 or later face a permanently harder bar (0.868 vs. 0.651
+consistency) that has nothing to do with their dip-and-regime evidence being weaker —
+it's a side effect of when the ETF happened to launch.**
+
+### 7.2 Empirical scope: is it frozen *today*, for real tickers, not just in the worst case?
+
+For each ticker, swept `n` from 1 to 500 holding **today's actual observed**
+consistency/depth/decades fixed (same method as §6.1's SMH check) — does the label
+ever leave "low / likely mined" purely from more sample size, given what today's
+evidence actually looks like?
+
+| Ticker | decades_cap | today n | today consistency | depth | label changes across n=1..500? |
+|---|---|---|---|---|---|
+| SMH | 3 | 44 | 0.568 | 3 | No |
+| ^SOX | 4 | 72 | 0.556 | 3 | No |
+| SPY | 4 | 8 | 0.750 | 2 | **Yes** |
+| QQQ | 4 | 13 | 0.539 | 3 | No |
+| GLD | 3 | 59 | 0.559 | 3 | No |
+| XLK | 4 | 15 | 0.533 | 3 | No |
+| XLF | 4 | 21 | 0.714 | 3 | No |
+| XLV | 4 | 14 | 0.929 | 3 | **Yes** |
+| XLE | 4 | 68 | 0.647 | 3 | No |
+| XLI | 4 | 16 | 0.563 | 1 | No |
+| XLY | 4 | 12 | 0.500 | 3 | No |
+| XLP | 4 | 13 | 0.615 | 1 | No |
+| XLU | 4 | 23 | 0.783 | 3 | **Yes** |
+| XLB | 4 | 25 | 0.720 | 3 | No |
+| RSP | 3 | 8 | 0.625 | 1 | No |
+| IWM | 3 | 27 | 0.519 | 3 | No |
+| MGK | 3 | 9 | 0.667 | 1 | No |
+
+**14 of 17 tickers (82%): frozen at "low / likely mined" for every n from 1 to 500,
+today.** For these, no amount of additional historical sample — 10x, 100x what's
+actually available — would move today's label at all, because today's own consistency
+sits below that ticker's fixed bar (§7.1). The 3 exceptions (SPY, XLV, XLU) cross into
+"moderate" somewhere in that range not because their evidence is unusually strong, but
+because their today-consistency (0.75, 0.929, 0.783) happens to already clear their
+0.651 bar — once it clears, growing `n` toward saturation (§6.1's `n≈12` term, plus the
+deflation factor's own slower approach to 1) finishes the job. **All 17 tickers show
+`today_label = "low / likely mined"` right now** — the sweep result is what
+distinguishes "this is temporarily low and could move with more data" (3 tickers) from
+"this cannot move today no matter what" (14 tickers), a distinction the label itself
+does not surface.
+
+### 7.3 This is the same class of defect as two already-named incidents, not a new kind of bug
+
+`MARKET_MEMORY_V2_BUILD.md` §8 ("Label discipline") already names two prior incidents
+where a field's name promised something its value didn't deliver:
+`regime_episode_count` surfaced as if it were the sample size, `as_of_ts` treated as
+if it were the trading day. `dip_context`'s `confidence_label` is a third: it's
+presented per-forecast — a fresh read of today's specific dip-and-regime evidence —
+but for 14 of 17 tickers today, its value is fully determined before any of that
+evidence is even looked at, by two numbers that never change once a ticker is chosen
+(`decades_cap`, fixed at listing; `depth`, which §6.5 shows lands on 3 for the common
+case regardless of ticker). Added as incident #3 and a general rule to §8's list —
+see that section directly (`MARKET_MEMORY_V2_BUILD.md` §8) rather than duplicating the
+wording here.
+
+**Not fixed in this pass** (explicitly out of scope per instruction — "do not tune
+consistency thresholds to fix this"): the label's formula, the depth/decades weights,
+and the "moderate"/"high" cutoffs are all unchanged. This section is measurement and a
+rename/rule proposal, not a recalibration.
+
+### 7.4 Phase D gate-scorecard implication
+
+`MARKET_MEMORY_V2_BUILD.md` §5's existing "Gate scorecard — `voter='forecast'` vs.
+`voter='dip_context'` Brier, head to head" needs a caveat attached before it's run, not
+after: if `dip_context`'s confidence label is frozen at a per-ticker constant for most
+(ticker, day) pairs regardless of that day's actual dip evidence, then a Brier/hit-rate
+comparison keyed on that label is substantially comparing **which tickers happen to
+have `decades_cap=4` vs. `3`, and which tickers' typical consistency clears 0.651 vs.
+0.868** — a fixed per-ticker offset baked into the confidence machinery — not "how good
+is `dip_context`'s judgment on a given day" vs. "how good is the ensemble's." The
+scorecard should stratify by ticker (or at minimum by `decades_cap`) before drawing any
+conclusion about which voter's *gating* is better calibrated, or it risks crediting/
+blaming the gate for something that was fixed at each ticker's listing date, long
+before Phase D's replay window even starts. Noted in `MARKET_MEMORY_V2_BUILD.md` §5
+directly.
+
+### 7.5 Fixed in this pass: `dip_context`'s missing sample provenance (§6.2)
+
+Per instruction, done ahead of C4 rather than left as a flagged gap: `engines/
+dip_context.py`'s `_horizon_stats()` now computes `date_start`/`date_end` from the
+entry dates of whichever positions survive the horizon's `end < n` filter — the exact
+definition `forecast_engine.horizon_stats()` already uses, so the two voters' date
+ranges are directly comparable. `forecast_engine.persist_dip_context_forecast()`
+threads this into `evidence_json.sample_size` (`{n, date_start, date_end}`) and
+mirrors `regime_match_depth` into `evidence_json` alongside its existing
+`features_json` copy, so a query reading `evidence_json` for depth doesn't silently
+get `NULL` depending on which voter wrote the row. Verified end-to-end against live
+SMH data: `evidence_json.sample_size` for the 21d horizon now reads
+`{"n": 44, "date_start": "2005-10-19", "date_end": "2026-07-07"}` where before this
+fix nothing at all was recorded. Full existing test suite (5 files) still green after
+the change — no test covered this shape before, so nothing was broken, but nothing
+caught the gap either; also worth a regression test before C4's backfill, not added
+here.

@@ -356,9 +356,22 @@ def regime_conditioned_positions(regime_tuples, current_tuple, gap, min_n):
     for depth in (3, 2, 1, 0):
         if depth == 0:
             positions = list(range(len(regime_tuples)))
+        elif "unknown" in current_tuple[:depth]:
+            # Today's own regime is unresolved at this depth (a data gap
+            # in one of vix/credit/spy_trend, not evidence of any regime)
+            # -- nothing can honestly match it. Force backoff instead of
+            # letting the next check silently match every OTHER
+            # unresolved date, which is what "unknown" == "unknown"
+            # comparing equal did before this fix (see docs/
+            # CREDIT_SERIES.md -- with HY OAS only covering 2023-08-07+,
+            # this used to make every pre-2023 date look like a 3-
+            # dimensional regime match against every other pre-2023 date,
+            # regardless of what was actually happening).
+            positions = []
         else:
             positions = [i for i, t in enumerate(regime_tuples)
-                         if t[:depth] == current_tuple[:depth]]
+                         if t[:depth] == current_tuple[:depth]
+                         and "unknown" not in t[:depth]]
         thinned = thin_sequential(positions, gap)
         if len(thinned) >= min_n or depth == 0:
             return thinned, depth

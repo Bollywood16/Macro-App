@@ -121,13 +121,18 @@ def _thin_sequential(positions, gap):
 def _matched_positions(regime_tuples, dip_positions, current_tuple, gap, min_n):
     """Depth-backoff regime match (3-dim -> unconditional), restricted to
     dip days only, gap-thinned to independent episodes. Mirrors forecast_
-    engine.regime_conditioned_positions but pre-filtered to dip days."""
+    engine.regime_conditioned_positions (including its "unknown" must
+    never match "unknown" guard -- see that function's comment and
+    docs/CREDIT_SERIES.md) but pre-filtered to dip days."""
     for depth in (3, 2, 1, 0):
         if depth == 0:
             cand = list(dip_positions)
+        elif "unknown" in current_tuple[:depth]:
+            cand = []
         else:
             cand = [i for i in dip_positions
-                    if regime_tuples[i][:depth] == current_tuple[:depth]]
+                    if regime_tuples[i][:depth] == current_tuple[:depth]
+                    and "unknown" not in regime_tuples[i][:depth]]
         thinned = _thin_sequential(sorted(cand), gap)
         if len(thinned) >= min_n or depth == 0:
             return thinned, depth

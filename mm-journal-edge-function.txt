@@ -46,13 +46,37 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// A6 (Phase A, forecast_engine.py): dip_context.py's own forecast rows
+// share their sibling ensemble rows' ticker AND as_of_ts, tagged via the
+// `voter` column ('forecast' | 'dip_context' — Phase B; matches
+// agreement_engine.py's Ballot.voter vocabulary. Not named `source`: that
+// key already exists on every row's features_json with a different
+// meaning, the run-trigger tag 'batch'/'on_demand'/'chat'/'scanner'.
+// Superseded model_version ILIKE 'mm-dipcontext%' string-matching, which
+// only ever worked because model_version happened to encode this too.)
+// Any surface that renders or lists "the" forecast for a ticker — the
+// TearSheet (get_latest_forecast), the Home watchlist (query_forecasts
+// view:"watchlist"), the unactioned-forecasts review queue
+// (list_unactioned_forecasts) — must not let one of these rows stand in
+// for the ensemble's: they're a second, much-smaller-sample model, scored
+// on its own ledger (Phase D), never a call to act on. One helper so the
+// exclusion can't drift between call sites.
+//
+// DEPLOY ORDER: db/004_forecast_voter_column.sql must be applied (and its
+// backfill complete) BEFORE this function is deployed — it queries a
+// column that migration adds. Deploying this first breaks every gated
+// read with a missing-column error.
+function excludeDipContextGate(q: any) {
+  return q.neq("voter", "dip_context");
+}
+
 // Only the DB's NOT NULL columns (minus ones with defaults) are required
 // here — everything else is validated by the table constraints themselves.
 const REQUIRED_FIELDS: Record<string, string[]> = {
   create_quote_snapshot: ["ticker", "price", "source"],
   create_forecast: [
     "ticker", "as_of_ts", "effective_price", "quote_snapshot_id",
-    "horizon_days", "model_version",
+    "horizon_days", "model_version", "voter",
   ],
   create_decision: ["forecast_id", "action"],
   get_forecast: ["forecast_id"],
@@ -67,6 +91,13 @@ const REQUIRED_FIELDS: Record<string, string[]> = {
   get_calibration_data: [],
   create_registry_entry: ["model_version", "status"],
   list_registry_entries: [],
+  // Market Memory tear-sheet upgrade (BUILD.md / db/003_tearsheet_layer):
+  // episodes.py reads the library back here to merge cause/what_ended_it
+  // into a fresh statistical-analog scan (list_episodes), and both the
+  // Python fingerprinting pass and the handoff write-back path use
+  // upsert_episode — insert for a newly-found date, update for annotating
+  // an existing one — matching episodes' select/insert/update grant (no
+  // delete) in db/003.
   list_episodes: ["asset"],
   upsert_episode: ["asset", "event_date"],
 };
@@ -205,11 +236,12 @@ Deno.serve(async (req) => {
         if (lErr) throw lErr;
         if (!latest) return json({ forecasts: [] });
 
-        const { data: forecasts, error: fErr } = await supabase
-          .from("forecasts").select("*")
-          .eq("ticker", payload.ticker)
-          .eq("as_of_ts", latest.as_of_ts)
-          .order("horizon_days");
+        const { data: forecasts, error: fErr } = await excludeDipContextGate(
+          supabase.from("forecasts").select("*")
+            .eq("ticker", payload.ticker)
+            .eq("as_of_ts", latest.as_of_ts)
+            .order("horizon_days"),
+        );
         if (fErr) throw fErr;
         return json({ forecasts });
       }
@@ -254,13 +286,28 @@ Deno.serve(async (req) => {
         // needs a thin per-row slice; mm-search's Q&A tool calls this same
         // op with no view and still needs the full row (p_positive,
         // evidence_json.recommendation_label), so "*" stays the default.
+        //
+        // Phase A fix: this used to alias `verdict` from
+        // evidence_json.tearsheet_extras.dip_context.verdict — dip_context
+        // is a second, much-smaller-sample voter (regime-matched dips
+        // only), and surfacing ITS verdict as the ticker's verdict is the
+        // same bug the TearSheet pill had (see index.html's tsVerdictHTML).
+        // Pull the ensemble's own recommendation_label instead — it's
+        // ticker-level (identical across every horizon row) same as
+        // dip_context's verdict was, so this is a like-for-like swap, not
+        // a behavior change in shape.
         const WATCHLIST_SELECT = `ticker, as_of_ts, effective_price, horizon_days,
           confidence_score, confidence_label,
-          verdict:evidence_json->tearsheet_extras->dip_context->verdict,
+          recommendation_label:evidence_json->recommendation_label,
           ret_1d:features_json->query_features->ret_1d`;
         let q = supabase.from("forecasts")
           .select(payload.view === "watchlist" ? WATCHLIST_SELECT : "*")
           .order("as_of_ts", { ascending: false }).limit(limit);
+        // The watchlist groups by as_of_ts and keeps one row per
+        // timestamp — left unfiltered, a dip_context row (same ticker,
+        // same as_of_ts as its sibling ensemble rows) could win that pick
+        // over the ensemble's. See excludeDipContextGate() above.
+        if (payload.view === "watchlist") q = excludeDipContextGate(q);
         if (payload.ticker) q = q.eq("ticker", payload.ticker);
         if (payload.model_version) q = q.eq("model_version", payload.model_version);
         if (payload.since) q = q.gte("as_of_ts", payload.since);
@@ -291,12 +338,13 @@ Deno.serve(async (req) => {
 
       case "list_unactioned_forecasts": {
         const limit = Number(payload.limit) > 0 ? Number(payload.limit) : 200;
-        const { data, error } = await supabase
-          .from("forecasts")
-          .select("*, decisions!left(id)")
-          .is("decisions.id", null)
-          .order("as_of_ts", { ascending: false })
-          .limit(limit);
+        const { data, error } = await excludeDipContextGate(
+          supabase.from("forecasts")
+            .select("*, decisions!left(id)")
+            .is("decisions.id", null)
+            .order("as_of_ts", { ascending: false })
+            .limit(limit),
+        );
         if (error) throw error;
         return json({ forecasts: (data ?? []).map(({ decisions, ...f }) => f) });
       }

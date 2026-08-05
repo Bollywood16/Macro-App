@@ -18,12 +18,17 @@ PLACEHOLDERS to be calibrated against the journal, not truths.
 from __future__ import annotations
 from dataclasses import dataclass, field
 
-VOTE_NUM = {"AVOID": -1.0, "WAIT": 0.0, "BUY": 1.0}
+# INSUFFICIENT_EVIDENCE (dip_context.py's third verdict state, added
+# alongside BUY/WAIT/AVOID — see that module's docstring) scores as
+# neutral 0.0 same as WAIT, but callers should also mark that ballot
+# calibrated=False so it carries zero weight and stays a true abstention
+# rather than a real WAIT vote pulling the aggregate toward "don't act".
+VOTE_NUM = {"AVOID": -1.0, "WAIT": 0.0, "BUY": 1.0, "INSUFFICIENT_EVIDENCE": 0.0}
 
 @dataclass
 class Ballot:
     voter: str
-    vote: str                 # BUY | WAIT | AVOID
+    vote: str                 # BUY | WAIT | AVOID | INSUFFICIENT_EVIDENCE
     confidence: float         # 0..1
     independent_n: int        # effective sample (module A) behind this voter
     calibrated: bool = True   # uncalibrated -> weight 0

@@ -125,6 +125,10 @@
     --ts-buy:#3f8f5b; --ts-buy-bg:#edf6f0;
     --ts-wait:#b0812f; --ts-wait-bg:#faf3e4;
     --ts-avoid:#c0574f; --ts-avoid-bg:#fbeceb;
+    /* Distinct from --ts-wait on purpose (Phase A2): WAIT = evidence says
+       don't act; INSUFFICIENT_EVIDENCE = no basis for a call either way.
+       Slate, not amber — it isn't a caution color, it's a "no read" one. */
+    --ts-insufficient:#6b7280; --ts-insufficient-bg:#f1f2f4;
     background:var(--ts-paper); color:var(--ts-ink);
     font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased;
     padding:0 !important;
@@ -164,15 +168,18 @@
   #tearSheet .ts-verdict.v-buy{background:var(--ts-buy-bg); border-color:#cfe8d8}
   #tearSheet .ts-verdict.v-wait{background:var(--ts-wait-bg); border-color:#f0e4c6}
   #tearSheet .ts-verdict.v-avoid{background:var(--ts-avoid-bg); border-color:#f0d5d2}
+  #tearSheet .ts-verdict.v-insufficient{background:var(--ts-insufficient-bg); border-color:#dfe1e5}
   #tearSheet .ts-verdict .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:10px;
     letter-spacing:.16em; text-transform:uppercase; margin-bottom:9px}
   #tearSheet .ts-verdict.v-buy .eyebrow{color:var(--ts-buy)}
   #tearSheet .ts-verdict.v-wait .eyebrow{color:var(--ts-wait)}
   #tearSheet .ts-verdict.v-avoid .eyebrow{color:var(--ts-avoid)}
+  #tearSheet .ts-verdict.v-insufficient .eyebrow{color:var(--ts-insufficient)}
   #tearSheet .ts-verdict .pill{font-family:'Fraunces',serif; font-weight:600; font-size:32px; line-height:1}
   #tearSheet .ts-verdict.v-buy .pill{color:var(--ts-buy)}
   #tearSheet .ts-verdict.v-wait .pill{color:var(--ts-wait)}
   #tearSheet .ts-verdict.v-avoid .pill{color:var(--ts-avoid)}
+  #tearSheet .ts-verdict.v-insufficient .pill{color:var(--ts-insufficient)}
   #tearSheet .ts-verdict .takeaway{margin-top:11px; font-size:14px; line-height:1.5}
   #tearSheet .ts-conf{margin-top:16px}
   #tearSheet .ts-conf .row{display:flex; justify-content:space-between; margin-bottom:6px}
@@ -342,6 +349,9 @@
     --home-buy:#3f8f5b; --home-buy-bg:#edf6f0;
     --home-wait:#b0812f; --home-wait-bg:#faf3e4;
     --home-avoid:#c0574f; --home-avoid-bg:#fbeceb;
+    /* Distinct from --home-wait on purpose (Phase A2) — see #tearSheet's
+       --ts-insufficient for the same reasoning. */
+    --home-insufficient:#6b7280; --home-insufficient-bg:#f1f2f4;
     background:var(--home-paper);
   }
   #view-desk .home-head{display:flex; align-items:baseline; justify-content:space-between; padding:6px 4px 0}
@@ -378,6 +388,7 @@
   #view-desk .home-flip .to.buy{color:var(--home-buy)}
   #view-desk .home-flip .to.wait{color:var(--home-wait)}
   #view-desk .home-flip .to.avoid{color:var(--home-avoid)}
+  #view-desk .home-flip .to.insufficient{color:var(--home-insufficient)}
   #view-desk .home-flip .why{margin-left:auto; color:var(--home-muted); font-size:11.5px}
   #view-desk .home-thead{display:grid; grid-template-columns:1fr 78px 70px; gap:8px; padding:0 4px 7px;
     font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
@@ -391,6 +402,7 @@
   #view-desk .home-row.buy{border-left-color:var(--home-buy)}
   #view-desk .home-row.wait{border-left-color:var(--home-wait)}
   #view-desk .home-row.avoid{border-left-color:var(--home-avoid)}
+  #view-desk .home-row.insufficient{border-left-color:var(--home-insufficient)}
   #view-desk .home-row .tk{font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:500; letter-spacing:.02em; color:var(--home-ink)}
   #view-desk .home-row .nm{font-size:11px; color:var(--home-faint); margin-top:2px}
   #view-desk .home-row .px{text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13.5px; color:var(--home-ink)}
@@ -402,6 +414,7 @@
   #view-desk .home-pill.buy{background:var(--home-buy-bg); color:var(--home-buy)}
   #view-desk .home-pill.wait{background:var(--home-wait-bg); color:var(--home-wait)}
   #view-desk .home-pill.avoid{background:var(--home-avoid-bg); color:var(--home-avoid)}
+  #view-desk .home-pill.insufficient{background:var(--home-insufficient-bg); color:var(--home-insufficient)}
   #view-desk .home-conf{display:flex; gap:2.5px; justify-content:flex-end; margin-top:5px}
   #view-desk .home-conf i{width:11px; height:3px; border-radius:2px; background:var(--home-line); display:block}
   #view-desk .home-conf i.on{background:var(--home-muted)}
@@ -843,24 +856,64 @@ function tsShowPage(n){
   p.scrollIntoView && document.getElementById("tearSheet").scrollTo({top:0});
 }
 
-const TS_VCLASS = {BUY:"v-buy", WAIT:"v-wait", AVOID:"v-avoid"};
-const TS_VCOLOR = {BUY:"--ts-buy", WAIT:"--ts-wait", AVOID:"--ts-avoid"};
+const TS_VCLASS = {BUY:"v-buy", WAIT:"v-wait", AVOID:"v-avoid", INSUFFICIENT_EVIDENCE:"v-insufficient"};
+const TS_VCOLOR = {BUY:"--ts-buy", WAIT:"--ts-wait", AVOID:"--ts-avoid", INSUFFICIENT_EVIDENCE:"--ts-insufficient"};
 
-function tsVerdictHTML(extras){
+// Trend model = the main ensemble (analog + regime-conditioned base rate),
+// which is what the "Recommendation" pill headlines on now. Dip model =
+// dip_context.py, a second, much-smaller-sample voter (regime-matched
+// dips only) that used to BE the pill (see git history) and could silently
+// override the ensemble's sign whenever it read low-confidence. Phase A
+// fix: the pill now reflects the ensemble, and dip_context gets its own
+// clearly-labeled line so a reader can see the two models answered
+// different questions on different sample sizes, never one masquerading
+// as the other.
+function tsTrendLineText(basisRow){
+  if(!basisRow || basisRow.p_positive==null) return "Trend model: no reliable read yet.";
+  return `Trend model: ${pct0(basisRow.p_positive)} higher in ${basisRow.horizon_days} days, `+
+    `from ${basisRow.n_independent??'–'} similar setups.`;
+}
+function tsDipLineText(dc){
+  if(!dc?.verdict) return "";
+  const dipH = Object.keys(dc.horizons||{})[0];
+  const stats = dipH ? dc.horizons[dipH] : null;
+  const n = stats?.n ?? 0;
+  if(dc.verdict.verdict === "INSUFFICIENT_EVIDENCE"){
+    return `Dip model: only ${n} comparable dip${n===1?'':'s'} on record — not enough to judge this one either way.`;
+  }
+  return `Dip model: ${pct0(stats?.p_positive)} higher in ${dipH} days, from ${n} comparable `+
+    `dip${n===1?'':'s'} (${dc.verdict.confidence_label||'–'} confidence).`;
+}
+
+function tsVerdictHTML(extras, rows){
+  // Headline pill is the ensemble's own recommendation, read off whichever
+  // horizon actually carries the conviction (evidence_json.
+  // recommendation_basis_horizon_days — see forecast_engine.py's A4 fix),
+  // not hard-coded to 5d and never dip_context's verdict alone.
+  const basisH = rows?.[0]?.evidence_json?.recommendation_basis_horizon_days;
+  const basisRow = (basisH!=null && rows?.find(r=>r.horizon_days===basisH))
+    || rows?.find(r=>r.horizon_days===5) || rows?.[0];
+  if(!basisRow) return "";
+  const ev = basisRow.evidence_json || {};
+  const recLabel = ev.recommendation_label || "no_reliable_signal";
+  const verdict = TS_RECLABEL_TO_VERDICT[recLabel] || "WAIT";
+  const vClass = TS_VCLASS[verdict] || "v-wait";
+  const colorVar = TS_VCOLOR[verdict] || "--ts-wait";
+  const confPct = basisRow.confidence_score!=null
+    ? Math.max(0, Math.min(100, Math.round(basisRow.confidence_score*100))) : 0;
+  const takeaway = ev.model_action || RECLABEL_TEXT[recLabel] || "";
   const dc = extras?.dip_context;
-  if(!dc) return "";
-  const v = dc.verdict || {};
-  const vClass = TS_VCLASS[v.verdict] || "v-wait";
-  const colorVar = TS_VCOLOR[v.verdict] || "--ts-wait";
-  const confPct = Math.max(0, Math.min(100, Math.round(v.confidence_score || 0)));
-  const takeaway = (dc.plain || []).join(" ");
   return `<div class="ts-verdict ${vClass}">
-      <div class="eyebrow">Recommendation</div>
-      <div class="pill">${esc(v.verdict || "WAIT")}</div>
+      <div class="eyebrow">Recommendation${basisRow.horizon_days!=null ? ` · ${basisRow.horizon_days}d read` : ""}</div>
+      <div class="pill">${esc(RECLABEL_TEXT[recLabel] || verdict)}</div>
       <div class="takeaway">${esc(takeaway)}</div>
       <div class="ts-conf">
-        <div class="row"><span>Confidence</span><b>${esc(v.confidence_label || "–")} · ${confPct}</b></div>
+        <div class="row"><span>Confidence</span><b>${esc(basisRow.confidence_label || "–")} · ${confPct}</b></div>
         <div class="ts-meter"><div class="fill" style="width:${confPct}%;background:var(${colorVar})"></div></div>
+      </div>
+      <div class="ts-models" style="margin-top:12px">
+        <div class="ts-p muted">${esc(tsTrendLineText(basisRow))}</div>
+        ${dc ? `<div class="ts-p muted" style="margin-top:4px">${esc(tsDipLineText(dc))}</div>` : ""}
       </div>
       ${extras?.agreement ? `<div class="ts-p muted" style="margin-top:10px">${esc(extras.agreement.card_line)}</div>` : ""}
     </div>`;
@@ -1200,11 +1253,20 @@ function tsForecastStripHTML(rows){
 }
 
 function tsBuildHandoffBundle(ticker, rows, extras, decisions){
-  const row = rows?.find(r=>r.horizon_days===5) || rows?.[0];
+  const basisH = rows?.[0]?.evidence_json?.recommendation_basis_horizon_days;
+  const row = (basisH!=null && rows?.find(r=>r.horizon_days===basisH))
+    || rows?.find(r=>r.horizon_days===5) || rows?.[0];
   const dc = extras?.dip_context, rs = extras?.relative_strength, mc = extras?.bottom_scenarios;
   const tb = extras?.technicals;
   const lines = [`Market Memory tear sheet — ${ticker}`, `As of ${row?.as_of_ts || 'unknown'}`, ""];
-  if(dc?.verdict) lines.push(`Verdict: ${dc.verdict.verdict} (confidence: ${dc.verdict.confidence_label})`);
+  // Phase A3: the ensemble's own recommendation is "Verdict:" — dip_context
+  // is a second, much-smaller-sample voter and gets its own labeled line,
+  // same split as the TearSheet pill (tsVerdictHTML) now uses.
+  const recLabel = row?.evidence_json?.recommendation_label;
+  if(recLabel) lines.push(`Verdict: ${RECLABEL_TEXT[recLabel]||recLabel} `+
+    `(confidence: ${row.confidence_label}${row.horizon_days!=null?`, ${row.horizon_days}d basis`:''})`);
+  if(dc?.verdict) lines.push(`Dip-model verdict: ${dc.verdict.verdict} `+
+    `(confidence: ${dc.verdict.confidence_label})`);
   if(dc?.plain?.length) lines.push(dc.plain.join(" "));
   if(rs?.plain?.length) lines.push("Relative strength: " + rs.plain.join(" "));
   if(mc?.plain?.length) lines.push("Trough scenarios: " + mc.plain.join(" "));
@@ -1221,10 +1283,12 @@ function tsBuildHandoffBundle(ticker, rows, extras, decisions){
       `${d.action}${d.thesis ? ' — '+d.thesis : ''}`+
       `${d.forecasts?.horizon_days ? ` (${d.forecasts.horizon_days}d forecast, ${d.forecasts.confidence_label} confidence)` : ''}`));
   }
-  lines.push("", "Framework rules for this conversation: confidence gates presentation — a "+
-    "low-sample or likely-mined read never presents as a green call. WAIT and AVOID render "+
-    "as prominently as BUY. Don't anticipate a position ahead of what the data actually "+
-    "supports; a regime shift invalidates the setup above.", "",
+  lines.push("", "Framework rules for this conversation: confidence gates presentation, not "+
+    "direction — a low-sample or likely-mined read renders as INSUFFICIENT_EVIDENCE (no basis "+
+    "for a call either way), never as a green call, but it also never forces WAIT over a "+
+    "direction a larger-sample model actually found. WAIT and AVOID render as prominently as "+
+    "BUY. Don't anticipate a position ahead of what the data actually supports; a regime shift "+
+    "invalidates the setup above.", "",
     "Question: given the above, what would you add, challenge, or check that this system "+
     "can't see on its own?");
   return lines.join("\n");
@@ -1386,7 +1450,7 @@ function tsEpisodesHTML(extras, ticker){
 
 function tsOverviewPageHTML(extras, rows, fullDetail, ticker){
   const parts = [
-    tsVerdictHTML(extras),
+    tsVerdictHTML(extras, rows),
     tsPriceChartHTML(extras),
     tsRsFlagHTML(extras),
     tsMonteCarloHTML(extras),
@@ -1709,6 +1773,19 @@ const RECLABEL_CLASS = {
   moderate_long_candidate: "rec-long",
   high_conviction_long_candidate: "rec-long",
 };
+// Maps forecast_engine.py's richer recommendation_label taxonomy down to
+// the same three-way-plus-abstain vocabulary dip_context.py's verdict
+// uses (BUY/WAIT/AVOID/INSUFFICIENT_EVIDENCE), so both models render
+// through one visual language on the TearSheet pill and the Home
+// watchlist (Phase A3/A5) rather than two different sets of colors/words.
+const TS_RECLABEL_TO_VERDICT = {
+  no_reliable_signal: "INSUFFICIENT_EVIDENCE",
+  hold_no_change: "WAIT",
+  watch_for_confirmation: "WAIT",
+  reduce_defensive_candidate: "AVOID",
+  moderate_long_candidate: "BUY",
+  high_conviction_long_candidate: "BUY",
+};
 
 async function mmCall(op, payload){
   const pass = getPassphrase();
@@ -1808,16 +1885,32 @@ loadHomeWatchlist(); // Home (desk) is the default-on view at page load
 /* ------------------------------------------------------------------
    Home screen (mm-home.html mockup): search-first watchlist replacing
    the removed chat Desk (BUILD.md §4 "App home: NOT chat"). query_forecasts
-   is called with view:"watchlist", which has mm-journal alias the nested
-   forecasts.evidence_json.tearsheet_extras.dip_context.verdict (the same
-   verdict the TearSheet reads, duplicated onto every horizon row for a
-   given as_of_ts by forecast_engine.py) as a top-level `verdict` field,
-   and features_json.query_features.ret_1d as `ret_1d` — so the watchlist
-   never pulls the full evidence_json/features_json blobs over the wire.
+   is called with view:"watchlist", which has mm-journal alias the ensemble's
+   own evidence_json.recommendation_label (ticker-level, duplicated onto
+   every horizon row for a given as_of_ts by forecast_engine.py) as a
+   top-level `recommendation_label` field, and features_json.query_features.
+   ret_1d as `ret_1d` — so the watchlist never pulls the full evidence_json/
+   features_json blobs over the wire.
+   Phase A fix: this used to alias dip_context's verdict instead — a
+   second, much-smaller-sample voter — which is the same bug the TearSheet
+   pill had (see tsVerdictHTML). homeVerdictOf() below maps the ensemble's
+   richer recommendation_label taxonomy down to the same BUY/WAIT/AVOID/
+   INSUFFICIENT_EVIDENCE vocabulary dip_context's verdict used, via
+   TS_RECLABEL_TO_VERDICT, so nothing downstream (sort order, flip
+   detection, pill classes) needed to change shape.
    ------------------------------------------------------------------ */
-const HOME_CONF_DOTS = {"high":3, "moderate":2, "low / likely mined":1};
-function homeVerdictClass(v){ return v==="BUY"?"buy":v==="AVOID"?"avoid":"wait"; }
-function homeVerdictOf(row){ return row?.verdict; }
+const HOME_CONF_DOTS = {"high":3, "moderate":2, "low":1};
+function homeVerdictClass(v){
+  return v==="BUY"?"buy":v==="AVOID"?"avoid":v==="INSUFFICIENT_EVIDENCE"?"insufficient":"wait";
+}
+function homeVerdictOf(row){
+  if(!row) return null;
+  const recLabel = row.recommendation_label || "no_reliable_signal";
+  return {
+    verdict: TS_RECLABEL_TO_VERDICT[recLabel] || "WAIT",
+    confidence_label: row.confidence_label,
+  };
+}
 
 function homeMarketStatus(){
   // Approximate: weekday + 9:30-16:00 ET, ignoring holidays/half-days —

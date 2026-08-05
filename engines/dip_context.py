@@ -6,11 +6,21 @@ dip in X".
 Division of labor (same contract as episodes.py / relative_strength.py):
   * Python computes every number. The LLM/UI only renders a `plain` field
     or a verdict pill — it never invents a probability or a confidence.
-  * Confidence gates presentation: a low-n or statistically-mined-looking
-    read can NEVER surface as BUY. See build_verdict() below — it reuses
-    scripts/deflated_confidence.py's deflation formula, whose own label
-    already says "low / likely mined" for exactly this case, rather than
-    inventing a second, possibly-inconsistent gating scheme.
+  * Confidence gates presentation, but it gates HOW a read is shown, not
+    WHETHER it gets to assert a direction it never earned. See
+    build_verdict() below — it reuses scripts/deflated_confidence.py's
+    deflation formula, whose own label already says "low / likely mined"
+    for exactly this case. A "low / likely mined" or too-thin-n read
+    renders as INSUFFICIENT_EVIDENCE (we cannot judge this either way),
+    never as WAIT (we have evidence and it says don't act) and never as a
+    BUY/AVOID it can't support. Previously this module hard-forced WAIT on
+    a mined read regardless of its point estimate's direction — which let
+    a handful of regime-matched dips silently overrule a much larger
+    ensemble's opposite-signed call elsewhere on the tear sheet, because
+    WAIT reads as a real, opposing vote and INSUFFICIENT_EVIDENCE doesn't.
+    Low confidence still changes the read, just not its direction: the
+    stated range widens and shadow_size (how much weight this read should
+    carry if ever sized into anything) shrinks toward zero.
   * This module is self-contained (no imports from scripts/) so it can be
     unit-tested and composed in isolation, matching how episodes.py and
     relative_strength.py already ship. The small pieces it needs from the
@@ -193,19 +203,50 @@ def _volume_forensics(close: pd.Series, volume: pd.Series, lookback=VOL_LOOKBACK
 # ---------------------------------------------------------------- verdict
 
 def build_verdict(stats, confidence_score, confidence_label):
-    """Confidence-gated, equal-weight BUY/WAIT/AVOID. A low/likely-mined
-    read is capped at WAIT regardless of which way the edge points — this
-    is the rule referenced by BUILD.md's prime directive #3, kept in one
-    place so every caller gets the same gate."""
-    if stats is None or confidence_label == "low / likely mined":
+    """Confidence-gated BUY/WAIT/AVOID/INSUFFICIENT_EVIDENCE — see the
+    module docstring for why INSUFFICIENT_EVIDENCE replaced the old
+    hard-WAIT gate (BUILD.md's prime directive #3, corrected). This is the
+    one place every caller gets the same rule from, same as before."""
+    shadow_size = round(max(0.0, min(1.0, confidence_score / 100.0)), 2)
+
+    if stats is None:
         return {
-            "verdict": "WAIT",
+            "verdict": "INSUFFICIENT_EVIDENCE",
             "confidence_label": confidence_label or "low / likely mined",
             "confidence_score": confidence_score,
-            "caveat": ("Sample is too small, or statistically indistinguishable "
-                       "from a mined pattern, to support a call either way. "
-                       "Amber-capped regardless of apparent direction."),
+            "caveat": ("No independent historical episodes match today's dip "
+                       "depth and regime closely enough to condition on — not "
+                       "enough to judge this one either way."),
+            "shadow_size": 0.0,
+            "display_range": None,
         }
+
+    q20, q80 = stats["q20"], stats["q80"]
+    mined = confidence_label == "low / likely mined"
+    if mined:
+        # Deflated confidence says this read is statistically indistinguishable
+        # from a mined pattern. That never flips or blocks a direction found
+        # elsewhere — it only widens the stated range so the point estimate
+        # isn't shown tighter than it deserves; shadow_size (above) already
+        # shrinks with the same score.
+        half_width = (q80 - q20) / 2
+        q20, q80 = round(q20 - half_width, 4), round(q80 + half_width, 4)
+    display_range = {"q20": q20, "q80": q80}
+
+    if mined or stats["n"] < MIN_N:
+        n = stats["n"]
+        return {
+            "verdict": "INSUFFICIENT_EVIDENCE",
+            "confidence_label": confidence_label,
+            "confidence_score": confidence_score,
+            "caveat": (f"Only {n} comparable dip{'s' if n != 1 else ''} on "
+                       "record — not enough to judge this one either way. "
+                       "Not a call against acting; it simply can't outvote a "
+                       "higher-sample read found elsewhere on the tear sheet."),
+            "shadow_size": shadow_size,
+            "display_range": display_range,
+        }
+
     edge = stats["p_positive"] - 0.5
     downside = stats["expected_mae"]
     if edge <= -0.08 or (downside is not None and downside < -0.12):
@@ -215,7 +256,8 @@ def build_verdict(stats, confidence_score, confidence_label):
     else:
         verdict = "WAIT"
     return {"verdict": verdict, "confidence_label": confidence_label,
-            "confidence_score": confidence_score, "caveat": None}
+            "confidence_score": confidence_score, "caveat": None,
+            "shadow_size": shadow_size, "display_range": display_range}
 
 
 # ------------------------------------------------------------- entrypoint

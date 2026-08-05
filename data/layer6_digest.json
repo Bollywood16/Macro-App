@@ -1,40 +1,21 @@
 {
-  "generated_utc": "2026-08-04 23:32 UTC",
+  "generated_utc": "2026-08-05 23:28 UTC",
   "source": "top setups from data/scanner_digest.json, opportunity_score-ranked",
-  "scanner_digest_generated_utc": "2026-08-04 23:29 UTC",
+  "scanner_digest_generated_utc": "2026-08-05 23:26 UTC",
   "interval": "15m",
   "top_n": 5,
   "scanned_tickers": [
+    "XLY",
+    "XLU",
     "XLE",
-    "GLD"
+    "GLD",
+    "XLC"
   ],
   "results": [
     {
-      "ticker": "XLE",
+      "ticker": "XLY",
       "interval": "15m",
-      "generated_utc": "2026-08-04 23:32 UTC",
-      "verdict": "GO",
-      "gates": {
-        "close_above_vwap": true,
-        "volume_ge_prior_bar": true,
-        "macd_histogram_positive": true
-      },
-      "facts": {
-        "bar_ts": "2026-08-04T15:45:00-04:00",
-        "close": 58.52,
-        "session_vwap": 58.2333,
-        "bar_volume": 5115575,
-        "prior_bar_volume": 1395757,
-        "relative_volume_vs_trailing_avg": 5.425,
-        "macd_histogram": 0.00663,
-        "rsi14": 49.02
-      },
-      "warnings": []
-    },
-    {
-      "ticker": "GLD",
-      "interval": "15m",
-      "generated_utc": "2026-08-04 23:32 UTC",
+      "generated_utc": "2026-08-05 23:28 UTC",
       "verdict": "NO-GO",
       "gates": {
         "close_above_vwap": false,
@@ -42,14 +23,102 @@
         "macd_histogram_positive": false
       },
       "facts": {
-        "bar_ts": "2026-08-04T15:45:00-04:00",
-        "close": 374.12,
-        "session_vwap": 374.8782,
-        "bar_volume": 449661,
-        "prior_bar_volume": 109407,
-        "relative_volume_vs_trailing_avg": 2.793,
-        "macd_histogram": -0.25383,
-        "rsi14": 49.82
+        "bar_ts": "2026-08-05T15:45:00-04:00",
+        "close": 118.62,
+        "session_vwap": 118.7874,
+        "bar_volume": 840554,
+        "prior_bar_volume": 344593,
+        "relative_volume_vs_trailing_avg": 5.95,
+        "macd_histogram": -0.00876,
+        "rsi14": 54.89
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLU",
+      "interval": "15m",
+      "generated_utc": "2026-08-05 23:28 UTC",
+      "verdict": "GO",
+      "gates": {
+        "close_above_vwap": true,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": true
+      },
+      "facts": {
+        "bar_ts": "2026-08-05T15:45:00-04:00",
+        "close": 43.65,
+        "session_vwap": 43.6127,
+        "bar_volume": 4143428,
+        "prior_bar_volume": 1639229,
+        "relative_volume_vs_trailing_avg": 6.377,
+        "macd_histogram": 0.02744,
+        "rsi14": 49.23
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLE",
+      "interval": "15m",
+      "generated_utc": "2026-08-05 23:28 UTC",
+      "verdict": "NO-GO",
+      "gates": {
+        "close_above_vwap": false,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": true
+      },
+      "facts": {
+        "bar_ts": "2026-08-05T15:45:00-04:00",
+        "close": 57.29,
+        "session_vwap": 57.6248,
+        "bar_volume": 5227482,
+        "prior_bar_volume": 1827235,
+        "relative_volume_vs_trailing_avg": 6.79,
+        "macd_histogram": 0.01379,
+        "rsi14": 34.52
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "GLD",
+      "interval": "15m",
+      "generated_utc": "2026-08-05 23:28 UTC",
+      "verdict": "NO-GO",
+      "gates": {
+        "close_above_vwap": true,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": false
+      },
+      "facts": {
+        "bar_ts": "2026-08-05T15:45:00-04:00",
+        "close": 389.57,
+        "session_vwap": 388.5355,
+        "bar_volume": 843832,
+        "prior_bar_volume": 289981,
+        "relative_volume_vs_trailing_avg": 2.518,
+        "macd_histogram": -0.55173,
+        "rsi14": 64.8
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLC",
+      "interval": "15m",
+      "generated_utc": "2026-08-05 23:28 UTC",
+      "verdict": "NO-GO",
+      "gates": {
+        "close_above_vwap": false,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": true
+      },
+      "facts": {
+        "bar_ts": "2026-08-05T15:45:00-04:00",
+        "close": 110.86,
+        "session_vwap": 111.0192,
+        "bar_volume": 820206,
+        "prior_bar_volume": 228782,
+        "relative_volume_vs_trailing_avg": 5.18,
+        "macd_histogram": 0.07327,
+        "rsi14": 52.02
       },
       "warnings": []
     }

@@ -502,3 +502,115 @@ voters, writing to a separate `forecasts_replay` table, chunked/resumable GitHub
 Actions workflow, block-count reporting on completion. `scripts/pit_seed.py` (this
 document's §5) is explicitly not that workflow and doesn't become it — C4 needs its own
 chunking/resumability/reporting, not a bigger version of the local seed script.
+
+---
+
+## 8. C4 built, NOT dispatched — workflow file and runtime estimate (2026-08-05)
+
+Per instruction: built for review, nothing run. `.github/workflows/replay-backfill.yml`
+exists on disk; it has not been dispatched, and cannot succeed yet even if it were —
+see "Prerequisites, not yet done" below.
+
+### 8.1 What was built
+
+- **`supabase/migrations/20260805150000_forecasts_replay_table.sql`** — mirrors
+  `forecasts` column-for-column, two deliberate differences (`quote_snapshot_id`
+  nullable/no FK, `ticker` no FK to `assets`), both explained in the file's own
+  docstring. **Not run against live Supabase.**
+- **`supabase/functions/mm-journal/index.ts` + `mm-journal-edge-function.txt`** (kept in
+  sync, per this file's own "paste into the dashboard" deploy model) — three new ops:
+  `create_forecast_replay_batch` (bulk insert, the reason a batch op exists at all — see
+  §8.3), `latest_forecast_replay_date` (backs `--resume`), `forecasts_replay_block_counts`
+  (the spec's own "report block count per horizon" line). **Not redeployed.**
+- **`scripts/replay_backfill.py`** — the per-ticker worker each matrix job runs: iterates
+  trading dates via the seeded PIT store, calls `replay()` (C2), builds `forecasts_replay`
+  rows for both voters (`forecast` at the replay grid's 4 horizons — `docs/C3_DESIGN.md`
+  §4's "Correction" note: 1d/5d/20d/60d only, to save backfill compute, distinct from
+  live's 6 — and `dip_context` at its own native 21d/63d), batches at 500 rows/write.
+  `--resume` and `--dry-run` both implemented and dry-run-tested against the real seeded
+  store (see §8.2).
+- **`.github/workflows/replay-backfill.yml`** — `workflow_dispatch` only (no schedule — a
+  backfill isn't recurring), a 17-way matrix (one job per ticker, chunking by ticker per
+  §8.3's runtime finding), `--resume`/`--dry-run` exposed as dispatch inputs, a final
+  `report` job that calls `forecasts_replay_block_counts`.
+
+Two additive `forecast_engine.py` changes this needed, beyond C2's own (`tearsheet_extras`,
+`trading_date`, the `assert query_pos` guard — §6): `run_one()`'s return value now also
+exposes `horizon_confidence` (per-horizon confidence score/label — previously only the
+basis horizon's was returned, and a backfilled row needs its OWN horizon's confidence,
+not the headline one's).
+
+**A real, unrelated correctness bug found and fixed while building this, not shipped
+broken:** the first draft of `--resume` called a fictional `query_forecasts` shape
+(`{table, voter, order_by, limit}`) — the real op is hardcoded to the `forecasts` table
+with none of those parameters. Caught before committing (by re-reading the actual op's
+implementation, not assumed), fixed by adding the narrowly-scoped
+`latest_forecast_replay_date` op instead of a generic passthrough.
+
+### 8.2 Runtime estimate — measured compute, estimated writes, clearly labeled which is which
+
+**Total workload, counted exactly from the real seeded store, not estimated:** 89,060
+`replay(ticker, date)` calls across all 17 tickers for 2005-01-01→2025-12-31 (16 tickers
+at 5,283 trading dates each; `MGK` at 4,532, per its own 2007-12-27 start, §2.3). Each
+call yields 6 `forecasts_replay` rows (4 for `voter='forecast'`, 2 for
+`voter='dip_context'`) when it scores at all — **534,360 total rows**, before accounting
+for the small fraction of early `MGK` dates that return `None` (insufficient 260-day
+history) and cost nothing.
+
+**Compute cost — measured, not guessed**, after finding and fixing a real bottleneck: an
+unpatched `replay('SPY', ...)` call ran **~740ms**, ~60% of it (174 separate
+`pd.read_parquet` calls) re-reading the same ~30-40 year-files from disk that a call
+moments earlier for the same ticker had just read — `pit_store.as_of()` had no cache
+across calls, and a backfill iterating one ticker across ~5,000 dates was about to re-read
+that ticker's entire history from disk 5,000 times to answer 5,000 different truncation
+questions. Added a process-lifetime read cache (`pit_store._read_cache`, keyed by
+`(table, key, store_root)` — the disk read, not the date filter, since the files don't
+change between calls, only `date` does). Result: **~420-500ms/call for SPY/XLK,
+~270-370ms for GLD/MGK** (shorter history → smaller frames to filter/scan each call),
+measured directly across 5 tickers and a 252-trading-day 2010 steady-state run for SMH
+(1.4 min / 252 dates = 333ms/date). **Working estimate: ~0.4s/call**, blended across
+these measurements.
+
+| | Calls | Estimate |
+|---|---|---|
+| **Sequential, single job, all 17 tickers** | 89,060 | 89,060 × 0.4s ≈ **9.9 hours** |
+| **17-way matrix, slowest single job** (SPY/QQQ/etc., 5,283 dates) | 5,283 | 5,283 × 0.4s ≈ **35 min compute** |
+
+**This is why the workflow chunks by ticker, not by date range or as one job**: chunking
+turns a ~10-hour sequential run into a ~35-40 minute wall-clock run (dominated by the
+slowest matrix job, since jobs run in parallel), comfortably inside GitHub Actions' default
+6-hour per-job timeout with room to spare — `timeout-minutes: 90` in the workflow leaves
+~2.3x margin over the measured estimate for GitHub-hosted-runner CPU variance, not because
+9.9 hours of sequential work was ever seriously considered.
+
+**Per-job overhead, measured:** `scripts/pit_seed.py` (every matrix job runs on a fresh,
+empty runner — `data/pit/` is gitignored, nothing to restore from cache) — **8.9 seconds**
+for the full 17-ticker + VIX + BAA10Y seed. Negligible next to the backfill itself; not
+worth a shared-artifact/cache step.
+
+**Write cost — ESTIMATED, not measured** (no live Supabase access from this environment,
+by design — nothing was dispatched or deployed to test against): 534,360 rows ÷ 500
+rows/batch ≈ 1,069 total `create_forecast_replay_batch` calls across all 17 jobs. At a
+typical Supabase edge-function insert latency of ~300-800ms/batch (not measured here),
+total write time ≈ 1,069 × ~0.5s ≈ **~9 minutes total, ≈ 30-40 seconds per matrix job** —
+small relative to the ~35 min of compute, but flagged explicitly as an estimate, not a
+measurement, unlike every number above it. **This estimate is also the entire reason the
+batch op exists at all**: the live path's shape (one `create_forecast` HTTP call per row)
+applied to 534,360 rows individually, at a similar ~300-800ms/call network round trip,
+would cost **~45-120 hours of pure HTTP overhead** — the batch write isn't a minor
+optimization here, it's the difference between a workable backfill and one that can't
+finish in any practical timeframe.
+
+**Bottom line: ~35-40 minutes total wall-clock for the full 2005-2025, 17-ticker backfill**,
+once dispatched — dominated by compute, not writes, once batched.
+
+### 8.3 Prerequisites, not yet done (deployment order matters, same failure mode every prior migration in this repo documents)
+
+1. Run `20260805150000_forecasts_replay_table.sql` in the Supabase SQL editor.
+2. Redeploy `mm-journal` (paste `index.ts`/`mm-journal-edge-function.txt` into the
+   dashboard) with the three new ops.
+3. Only then is `replay-backfill.yml` dispatchable. Dispatching before 1-2 land fails
+   every job identically to every prior migration's own documented order-dependency.
+
+**Not dispatched. Not deployed. Nothing above was run against live Supabase in this
+pass** — per instruction, this section is the review checkpoint, not the backfill itself.

@@ -193,6 +193,62 @@ def _as_date(d) -> date_type:
     return pd.to_datetime(d).date()
 
 
+# Process-lifetime cache of each key's full, unfiltered, concatenated history
+# -- keyed by (table, key, store_root). Added after profiling C4's expected
+# workload (docs/C3_DESIGN.md §8): a single replay() call was measured at
+# ~740ms, ~60% of it (174 separate pd.read_parquet calls) re-reading the same
+# ~30-40 year-files from disk that an adjacent call for the same ticker/series
+# had just read moments before. A backfill iterating one ticker across ~5,000
+# trading dates was about to re-read that ticker's ENTIRE multi-decade history
+# from disk 5,000 times to answer 5,000 different truncation questions -- the
+# files themselves don't change between those calls, only the `date` filter
+# does, so the fix is to cache the read, not the filtered result (the filter
+# is cheap; the disk I/O + Arrow->pandas conversion was not).
+# NOT invalidated automatically: if something writes new files for a key
+# after this process has already read (and cached) it, subsequent as_of()
+# calls in THIS process will serve stale data until clear_cache() is called
+# explicitly. Fine for a single backfill run or test process (nothing
+# reads-then-writes-then-rereads the same key); call clear_cache() first in
+# any long-lived process that re-ingests while running.
+_read_cache: dict[tuple[str, str, str], pd.DataFrame] = {}
+
+
+def clear_cache():
+    """Drops the in-process read cache `as_of()` keeps per (table, key,
+    store_root). Call after writing new data for a key that an earlier
+    as_of() call in this same process already read -- see `_read_cache`'s
+    own comment for why this isn't automatic."""
+    _read_cache.clear()
+
+
+def _read_all(table: str, key: str, store_root: str) -> pd.DataFrame:
+    cache_key = (table, key, store_root)
+    if cache_key in _read_cache:
+        return _read_cache[cache_key]
+
+    key_dir = _key_dir(table, key, store_root)
+    if not os.path.isdir(key_dir):
+        raise PITStoreError(
+            f"as_of({table!r}, {key!r}, ...): no data ever ingested for this "
+            f"key ({key_dir} does not exist)")
+
+    frames = []
+    for fname in sorted(os.listdir(key_dir)):
+        if fname.endswith(".parquet"):
+            frames.append(pd.read_parquet(os.path.join(key_dir, fname)))
+    if not frames:
+        raise PITStoreError(
+            f"as_of({table!r}, {key!r}, ...): key directory exists but holds "
+            f"no parquet files ({key_dir})")
+
+    full = pd.concat(frames, ignore_index=True)
+    full["effective_date"] = pd.to_datetime(full["effective_date"]).dt.date
+    full["processed_date"] = pd.to_datetime(full["processed_date"]).dt.date
+    full = full.sort_values("effective_date").reset_index(drop=True)
+    _read_cache[cache_key] = full
+    return full
+
+
 def as_of(table: str, key: str, date, store_root: str = DEFAULT_STORE_ROOT) -> pd.DataFrame:
     """Rows whose `processed_date <= date`. Raises `PITStoreError` on empty --
     distinguishing (in the message, for whoever's debugging) "nothing was ever
@@ -205,29 +261,13 @@ def as_of(table: str, key: str, date, store_root: str = DEFAULT_STORE_ROOT) -> p
     optimization, and it sidesteps ever having to reason about a row whose
     `effective_date` and `processed_date` fall in different calendar years
     (the flows-table lag case §2.2 flags) being filed under the "wrong" year's
-    file.
+    file. The read itself (not the filter) is cached per (table, key,
+    store_root) across calls within one process -- see `_read_cache` above.
     """
     d = _as_date(date)
-    key_dir = _key_dir(table, key, store_root)
-    if not os.path.isdir(key_dir):
-        raise PITStoreError(
-            f"as_of({table!r}, {key!r}, {d}): no data ever ingested for this key "
-            f"({key_dir} does not exist)")
+    full = _read_all(table, key, store_root)
 
-    frames = []
-    for fname in sorted(os.listdir(key_dir)):
-        if fname.endswith(".parquet"):
-            frames.append(pd.read_parquet(os.path.join(key_dir, fname)))
-    if not frames:
-        raise PITStoreError(
-            f"as_of({table!r}, {key!r}, {d}): key directory exists but holds no "
-            f"parquet files ({key_dir})")
-
-    full = pd.concat(frames, ignore_index=True)
-    full["effective_date"] = pd.to_datetime(full["effective_date"]).dt.date
-    full["processed_date"] = pd.to_datetime(full["processed_date"]).dt.date
-
-    out = full[full["processed_date"] <= d].sort_values("effective_date")
+    out = full[full["processed_date"] <= d]
     if out.empty:
         first_available = full["effective_date"].min()
         raise PITStoreError(

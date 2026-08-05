@@ -86,6 +86,14 @@ const REQUIRED_FIELDS: Record<string, string[]> = {
     "quote_snapshot_id", "horizon_days", "model_version", "voter",
     "regime_model_version",
   ],
+  // Phase C4: only "rows" is enforced here (a non-empty array) -- the
+  // per-row NOT NULL fields are the same as create_forecast's list above
+  // minus quote_snapshot_id (nullable on forecasts_replay, see that
+  // migration), enforced by the table's own constraints on insert, same
+  // as every other op in this file relies on the table for.
+  create_forecast_replay_batch: ["rows"],
+  latest_forecast_replay_date: ["ticker", "voter"],
+  forecasts_replay_block_counts: [],
   create_decision: ["forecast_id", "action"],
   get_forecast: ["forecast_id"],
   trigger_forecast: ["ticker"],
@@ -166,6 +174,68 @@ Deno.serve(async (req) => {
           .from("forecasts").insert(payload).select().single();
         if (error) throw error;
         return json({ forecast: data });
+      }
+
+      // Phase C4 (docs/C3_DESIGN.md #8): the backfill grid is ~89,000
+      // replay(ticker, date) calls x ~6 rows each (4 horizons for
+      // voter='forecast' + 2 for voter='dip_context') -- roughly 530,000
+      // rows. One create_forecast call per row (the live path's shape,
+      // fine at live scale -- a few dozen tickers x a handful of horizons
+      // per day) would mean ~530,000 individual HTTPS round trips, which
+      // dominates the backfill's runtime far more than the actual
+      // computation does. This op accepts an array and does ONE insert
+      // per batch instead -- scripts/replay_backfill.py chunks at 500
+      // rows/batch. Writes to forecasts_replay (20260805150000_
+      // forecasts_replay_table.sql), never forecasts -- see that
+      // migration's own docstring for why replay rows never land in the
+      // live table. Same passphrase gate as every other op; no new secret
+      // needed.
+      case "create_forecast_replay_batch": {
+        const rows = payload.rows as Record<string, unknown>[];
+        if (!Array.isArray(rows) || rows.length === 0) {
+          return json({ error: "rows must be a non-empty array" }, 400);
+        }
+        const { data, error } = await supabase
+          .from("forecasts_replay").insert(rows).select("id");
+        if (error) throw error;
+        return json({ inserted: data.length });
+      }
+
+      // Phase C4: scripts/replay_backfill.py's --resume. Deliberately
+      // narrow (ticker + voter -> latest trading_date only), not a generic
+      // query_forecasts-for-replay op -- a backfill resume check needs
+      // exactly one number, and a generic {table, order_by, ...} passthrough
+      // would let a caller query/order by anything, which query_forecasts
+      // above already avoids by hardcoding its own table and filters.
+      case "latest_forecast_replay_date": {
+        const { data, error } = await supabase
+          .from("forecasts_replay").select("trading_date")
+          .eq("ticker", payload.ticker).eq("voter", payload.voter)
+          .order("trading_date", { ascending: false }).limit(1).maybeSingle();
+        if (error) throw error;
+        return json({ trading_date: data?.trading_date ?? null });
+      }
+
+      // C4 spec's own acceptance line: "Report block count per horizon on
+      // completion." head:true + count:"exact" makes each of these a cheap
+      // COUNT(*), not a row fetch -- safe against a ~530,000-row table.
+      // Fixed horizon/voter combos (not a GROUP BY via RPC) -- one Postgres
+      // function would be marginally cheaper than 8 small queries, but 8
+      // queries needs no new function/deploy step beyond this one file.
+      case "forecasts_replay_block_counts": {
+        const horizons = [1, 5, 20, 60, 21, 63];
+        const voters: Array<"forecast" | "dip_context"> = ["forecast", "dip_context"];
+        const counts: Record<string, number> = {};
+        for (const voter of voters) {
+          for (const h of horizons) {
+            const { count, error } = await supabase
+              .from("forecasts_replay").select("*", { count: "exact", head: true })
+              .eq("voter", voter).eq("horizon_days", h);
+            if (error) throw error;
+            if (count && count > 0) counts[`${voter}_${h}d`] = count;
+          }
+        }
+        return json({ block_counts: counts });
       }
 
       case "create_decision": {

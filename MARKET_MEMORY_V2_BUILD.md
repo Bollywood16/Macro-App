@@ -47,7 +47,13 @@ Last updated: 2026-08-05
 3. ~~**C3** — point-in-time Parquet store, `as_of()`~~ Done — `scripts/pit_store.py`.
    Git-history extraction was investigated and rejected as a data source (`docs/
    C3_DESIGN.md` §1) — nothing to extract.
-4. **C4** — historical backfill (dedicated GH Actions workflow) — next
+4. **C4** — historical backfill (dedicated GH Actions workflow). **Built, NOT
+   dispatched** — `.github/workflows/replay-backfill.yml`, `scripts/
+   replay_backfill.py`, `forecasts_replay` migration + 3 new mm-journal ops, all
+   committed for review. Estimated runtime ~35-40 min wall-clock (17-way ticker
+   matrix; ~9.9 hours if run as one sequential job — see `docs/C3_DESIGN.md` §8 for
+   the measured breakdown). **Not dispatchable yet**: the migration hasn't been run
+   and the edge function hasn't been redeployed (§8.3's deployment order).
 5. **D** — scoring on the replay ledger
 6. **E / F / G / H** — bottom-tell library, flush + cross-asset + ATH + committee + event mode, output rebuild, handoff
 

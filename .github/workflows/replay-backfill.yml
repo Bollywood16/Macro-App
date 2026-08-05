@@ -1,0 +1,159 @@
+name: C4 Replay Backfill
+
+# Phase C4 (MARKET_MEMORY_V2_BUILD.md §4, docs/C3_DESIGN.md §7-8). Populates
+# forecasts_replay for the 2005-2025 replay window across all 17 tickers.
+#
+# workflow_dispatch ONLY -- this is a one-shot (or resumed-a-few-times)
+# backfill, not a recurring job; it has no `schedule:` trigger by design.
+#
+# NOT YET DISPATCHABLE end-to-end: depends on
+# supabase/migrations/20260805150000_forecasts_replay_table.sql being run and
+# supabase/functions/mm-journal (create_forecast_replay_batch,
+# latest_forecast_replay_date, forecasts_replay_block_counts) being
+# redeployed first -- neither has happened yet, per this file's own review
+# gate (docs/C3_DESIGN.md §8: "do NOT dispatch it. Show me the workflow file
+# and estimated runtime first"). Dispatching before those two land fails
+# every job identically to every prior migration's own documented failure
+# mode (querying a column/table that doesn't exist yet).
+#
+# CHUNKING: one matrix job per ticker (17-way), not one big sequential job --
+# see docs/C3_DESIGN.md §8 for the measured reasoning (a single-job run was
+# estimated at ~9-10 hours; per-ticker parallel jobs bring the SLOWEST single
+# job to ~35-40 minutes, comfortably inside the default 6-hour GitHub Actions
+# job timeout with a lot of margin to spare).
+#
+# RESUMABLE: --resume queries forecasts_replay for this ticker's own latest
+# written trading_date and continues from there (scripts/replay_backfill.py),
+# so a re-dispatch after a partial failure doesn't redo the whole range. Also
+# exposed as an explicit start_date input for a manual partial re-run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Backfill start date (YYYY-MM-DD)"
+        required: false
+        default: "2005-01-01"
+      end_date:
+        description: "Backfill end date (YYYY-MM-DD)"
+        required: false
+        default: "2025-12-31"
+      tickers:
+        description: "Comma-separated ticker override (blank = all 17 replay tickers)"
+        required: false
+      resume:
+        description: "Resume from each ticker's latest already-written trading_date instead of start_date"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Compute and print progress only; skip all forecasts_replay writes"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-tickers:
+    runs-on: ubuntu-latest
+    outputs:
+      tickers: ${{ steps.resolve.outputs.tickers }}
+    steps:
+      - id: resolve
+        run: |
+          if [ -n "${{ inputs.tickers }}" ]; then
+            # Comma-separated override -> JSON array, e.g. "SMH,QQQ" -> ["SMH","QQQ"]
+            LIST=$(python3 -c "import json,sys; print(json.dumps([t.strip().upper() for t in '${{ inputs.tickers }}'.split(',') if t.strip()]))")
+          else
+            # docs/C3_DESIGN.md §2.3's 17 replay tickers, exact list --
+            # scripts/pit_seed.py's REPLAY_TICKERS is the source of truth,
+            # duplicated here as a literal since workflow YAML can't import
+            # a Python constant at this stage.
+            LIST='["SMH","^SOX","SPY","QQQ","GLD","XLK","XLF","XLV","XLE","XLI","XLY","XLP","XLU","XLB","RSP","IWM","MGK"]'
+          fi
+          echo "tickers=$LIST" >> "$GITHUB_OUTPUT"
+          echo "Resolved tickers: $LIST"
+
+  backfill:
+    needs: resolve-tickers
+    runs-on: ubuntu-latest
+    # No max-parallel set -- defers to the account's own default concurrent-
+    # job limit (17 tickers fits comfortably under every GitHub plan's
+    # default). Set explicitly here if that ever needs capping.
+    strategy:
+      fail-fast: false  # one ticker's failure (e.g. a delisted/renamed
+                         # symbol) must not cancel the other 16 in-flight jobs
+      matrix:
+        ticker: ${{ fromJson(needs.resolve-tickers.outputs.tickers) }}
+    # §8's measured estimate: slowest ticker (full 5,283-date range) ~35-40
+    # min compute + seed + write. 90 min leaves ~2.3x margin for a
+    # GitHub-hosted runner's slower/noisier-neighbor CPU and yfinance/FRED
+    # network variance, without masking a real hang for hours.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        # pyarrow: docs/C3_DESIGN.md §2.6 flagged this as missing from every
+        # existing workflow's pip line -- needed here for the first time,
+        # since this is the first workflow that touches scripts/pit_store.py.
+        run: pip install yfinance pandas numpy pyarrow
+      - name: Seed the point-in-time store
+        # Every matrix job runs on a fresh runner with no data/pit/ (it's
+        # gitignored -- derived data, never committed, see .gitignore).
+        # Measured at ~9s for the full 17-ticker + VIX + BAA10Y seed
+        # (docs/C3_DESIGN.md §8) -- negligible next to the backfill itself,
+        # not worth optimizing into a shared-artifact/cache step. Seeds the
+        # FULL universe even though this job only backfills one ticker,
+        # because SPY/QQQ (benchmarks) and VIX/BAA10Y (regime dimensions)
+        # are cross-ticker dependencies every single ticker's replay() calls
+        # need regardless of which one is being scored.
+        run: python3 scripts/pit_seed.py
+      - name: Run backfill for ${{ matrix.ticker }}
+        env:
+          APP_PASSPHRASE: ${{ secrets.APP_PASSPHRASE }}
+        run: |
+          ARGS="--ticker ${{ matrix.ticker }} --start ${{ inputs.start_date }} --end ${{ inputs.end_date }}"
+          if [ "${{ inputs.resume }}" = "true" ]; then
+            ARGS="$ARGS --resume"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python3 scripts/replay_backfill.py $ARGS
+
+  report:
+    needs: backfill
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install pandas
+      - name: Report block count per horizon
+        # MARKET_MEMORY_V2_BUILD.md §4 C4's own acceptance line: "Report
+        # block count per horizon on completion." Calls the
+        # forecasts_replay_block_counts op added alongside this workflow
+        # (supabase/functions/mm-journal) rather than re-deriving counts
+        # from each matrix job's own log output, which GitHub Actions
+        # doesn't make easy to aggregate across a matrix.
+        env:
+          APP_PASSPHRASE: ${{ secrets.APP_PASSPHRASE }}
+        run: |
+          python3 -c "
+          import sys, json
+          sys.path.insert(0, 'scripts')
+          import forecast_engine as fe
+          resp = fe.mm_journal('forecasts_replay_block_counts', {})
+          if resp is None:
+              print('[error] could not fetch block counts (see [warn] above)')
+              sys.exit(1)
+          print(json.dumps(resp.get('block_counts', {}), indent=2))
+          "

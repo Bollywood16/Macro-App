@@ -1394,6 +1394,14 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         "recommendation_basis_horizon_days": basis_h,
         "quote_snapshot_id": quote_snapshot_id,
         "forecast_ids": created_forecast_ids, "horizon_rows": horizon_rows,
+        # C4 (docs/C3_DESIGN.md #8): confidence_score/confidence_label above
+        # are the BASIS horizon's only -- every other horizon's own
+        # confidence (already computed, see horizon_confidence above) was
+        # persisted per-row live but never exposed on this return value.
+        # replay_backfill.py needs per-horizon confidence to write a
+        # forecasts_replay row that matches what the live path would have
+        # persisted for that same horizon, not just the headline one.
+        "horizon_confidence": horizon_confidence,
         "dip_context_forecast_ids": dip_context_forecast_ids,
         "persistence_failures": persistence_failures,
         "drivers": drivers, "invalidation_risks": invalidation_risks,

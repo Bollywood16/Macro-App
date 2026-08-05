@@ -52,13 +52,45 @@ both gated `low`). Mechanically correct per the gating rule, but whether a
 `moderate_long_candidate` tactical call is unresolved — see Phase D, which
 is designated the deciding evidence for this.
 
-## Phase B — `source` column migration
+## Phase B — `voter` column migration
 
-Adds a real `source` column (additive) to `forecasts` so dip_context's own
-rows are identified structurally instead of by `model_version ILIKE
-'mm-dipcontext%'` string-matching in `excludeDipContextGate()`. Migration
-should backfill `source='dip_context'` for existing rows tagged that way.
-Not started.
+Adds a real column (additive) to `forecasts` so dip_context's own rows are
+identified structurally instead of by `model_version ILIKE
+'mm-dipcontext%'` string-matching in `excludeDipContextGate()`.
+
+Named `voter`, not `source` as originally sketched in the A6 code comments
+— `features_json.source` already exists on every row with a different
+meaning (the run-trigger tag: `batch`/`on_demand`/`chat`/`scanner`).
+`voter` instead reuses `agreement_engine.py`'s existing `Ballot.voter`
+vocabulary (`'forecast'` | `'dip_context'`), which is exactly the
+distinction this column encodes — one name, one meaning, no clash with the
+existing JSON field.
+
+**Status: code complete 2026-08-05, not yet applied to the live DB/edge
+function.** Three artifacts, in required deploy order:
+
+1. `db/004_forecast_voter_column.sql` — adds `voter`, backfills every
+   existing row (both ensemble and dip_context rows are already live —
+   A6 shipped before this migration exists, so the backfill is load-
+   bearing, not a no-op), then sets `NOT NULL` + a check constraint +
+   index. **Must run first** — paste into the Supabase SQL editor.
+2. `supabase/functions/mm-journal/index.ts` (+ its `mm-journal-edge-
+   function.txt` mirror) — `excludeDipContextGate()` now filters
+   `voter <> 'dip_context'` instead of the ILIKE; `voter` added to
+   `create_forecast`'s `REQUIRED_FIELDS`. **Deploy only after** step 1 —
+   deploying first means every gated read 500s on a missing column.
+3. `scripts/forecast_engine.py` — both `create_forecast` payload sites
+   (`run_one()`'s per-horizon ensemble payload, and
+   `persist_dip_context_forecast()`) now send `voter: "forecast"` /
+   `voter: "dip_context"` respectively. Already in this commit; takes
+   effect on the next Forecast Engine run (scheduled or on-demand) once
+   1–2 are live. Sending `voter` before step 2 is deployed is harmless —
+   the edge function ignores unrecognized payload keys — but the row
+   still won't be excludable until the column and gate both exist.
+
+model_version keeps carrying `MODEL_VERSION_DIP_CONTEXT` too (unchanged) —
+`voter` doesn't replace it, it replaces model_version's *second*,
+never-intended job of also signaling row identity.
 
 ## Phase C — (unreserved / not yet defined)
 

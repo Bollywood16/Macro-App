@@ -709,13 +709,15 @@ def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
     """A6: write dip_context's own read as its own forecast row, same
     schema as the ensemble's rows, one per horizon it actually computed
     (21/63 trading days — its own HORIZONS, not the ensemble's). Tagged
-    via model_version (see MODEL_VERSION_DIP_CONTEXT) so it can be pulled
-    out of the ensemble's Brier ledger and scored on its own — the gate
-    has been steering (and, before this fix, silently overriding) the
-    tear sheet's headline for a while now with no record of whether doing
-    so has helped or hurt. Never blocks the main run: mm_journal() already
-    fails soft (warns, returns None) on any persistence error, same
-    posture as every other write in this file."""
+    voter='dip_context' (Phase B; model_version still carries
+    MODEL_VERSION_DIP_CONTEXT too, but every gated read now filters on
+    the structural column, not an ILIKE) so it can be pulled out of the
+    ensemble's Brier ledger and scored on its own — the gate has been
+    steering (and, before Phase A, silently overriding) the tear sheet's
+    headline for a while now with no record of whether doing so has
+    helped or hurt. Never blocks the main run: mm_journal() already fails
+    soft (warns, returns None) on any persistence error, same posture as
+    every other write in this file."""
     created = []
     if not dc_extras or not dc_extras.get("verdict"):
         return created
@@ -740,7 +742,7 @@ def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
             # one consistent unit regardless of which model wrote the row.
             "confidence_score": round((verdict.get("confidence_score") or 0) / 100.0, 4),
             "confidence_label": verdict.get("confidence_label"),
-            "model_version": MODEL_VERSION_DIP_CONTEXT,
+            "model_version": MODEL_VERSION_DIP_CONTEXT, "voter": "dip_context",
             "features_json": {
                 "as_of": as_of.isoformat(), "source": "dip_context",
                 "regime": dc_extras.get("regime"),
@@ -1087,7 +1089,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
             "expected_mae": ens["expected_mae"] if ens else None,
             "n_independent": ens["n"] if ens else 0,
             "confidence_score": conf_h, "confidence_label": conf_label_h,
-            "model_version": MODEL_VERSION,
+            "model_version": MODEL_VERSION, "voter": "forecast",
             "features_json": features_json, "evidence_json": evidence_json,
         }
         if dry_run or not quote_snapshot_id:

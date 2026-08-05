@@ -47,17 +47,27 @@ function json(body: unknown, status = 200) {
 }
 
 // A6 (Phase A, forecast_engine.py): dip_context.py's own forecast rows
-// share their sibling ensemble rows' ticker AND as_of_ts, tagged via
-// model_version (mm-dipcontext-gate-*) until Phase B's `source` column
-// exists. Any surface that renders or lists "the" forecast for a ticker —
-// the TearSheet (get_latest_forecast), the Home watchlist (query_forecasts
+// share their sibling ensemble rows' ticker AND as_of_ts, tagged via the
+// `voter` column ('forecast' | 'dip_context' — Phase B; matches
+// agreement_engine.py's Ballot.voter vocabulary. Not named `source`: that
+// key already exists on every row's features_json with a different
+// meaning, the run-trigger tag 'batch'/'on_demand'/'chat'/'scanner'.
+// Superseded model_version ILIKE 'mm-dipcontext%' string-matching, which
+// only ever worked because model_version happened to encode this too.)
+// Any surface that renders or lists "the" forecast for a ticker — the
+// TearSheet (get_latest_forecast), the Home watchlist (query_forecasts
 // view:"watchlist"), the unactioned-forecasts review queue
 // (list_unactioned_forecasts) — must not let one of these rows stand in
 // for the ensemble's: they're a second, much-smaller-sample model, scored
 // on its own ledger (Phase D), never a call to act on. One helper so the
 // exclusion can't drift between call sites.
+//
+// DEPLOY ORDER: db/004_forecast_voter_column.sql must be applied (and its
+// backfill complete) BEFORE this function is deployed — it queries a
+// column that migration adds. Deploying this first breaks every gated
+// read with a missing-column error.
 function excludeDipContextGate(q: any) {
-  return q.not("model_version", "ilike", "mm-dipcontext%");
+  return q.neq("voter", "dip_context");
 }
 
 // Only the DB's NOT NULL columns (minus ones with defaults) are required
@@ -66,7 +76,7 @@ const REQUIRED_FIELDS: Record<string, string[]> = {
   create_quote_snapshot: ["ticker", "price", "source"],
   create_forecast: [
     "ticker", "as_of_ts", "effective_price", "quote_snapshot_id",
-    "horizon_days", "model_version",
+    "horizon_days", "model_version", "voter",
   ],
   create_decision: ["forecast_id", "action"],
   get_forecast: ["forecast_id"],

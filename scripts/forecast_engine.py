@@ -387,7 +387,19 @@ def normalize_matrix(df: pd.DataFrame, fields):
 def analog_positions(X: np.ndarray, query_pos: int):
     n = X.shape[0]
     valid = ~np.isnan(X).any(axis=1)
-    valid[query_pos] = False
+    # Lookahead guard: exclude query_pos AND every row after it, not just
+    # query_pos itself. On the live path this is a no-op -- query_pos is
+    # always len(df)-1, so there is nothing after it to exclude. It stops
+    # being a no-op the moment any caller (replay(), C2) passes a frame
+    # that extends past the query date with query_pos pointing partway
+    # through it, at which point the old `valid[query_pos] = False` left
+    # every future row eligible as an analog candidate -- a nearest-
+    # neighbor match against the ticker's own future price action.
+    # regime_conditioned_positions() already gets this for free because
+    # its caller slices regime_tuples[:query_pos] before the search; this
+    # brings the feature-based analog search in line with that instead of
+    # relying on every future caller truncating its input correctly.
+    valid[query_pos:] = False
     if not valid.any():
         return [], None
     diffs = X[valid] - X[query_pos]

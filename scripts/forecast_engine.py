@@ -1104,7 +1104,9 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         "ticker": ticker, "effective_price": effective_price,
         "intraday_proxy": intraday_proxy, "recommendation_label": rec_label,
         "confidence_score": conf_score, "confidence_label": conf_label,
-        "primary_horizon": primary, "quote_snapshot_id": quote_snapshot_id,
+        "primary_horizon": primary,
+        "recommendation_basis_horizon_days": basis_h,
+        "quote_snapshot_id": quote_snapshot_id,
         "forecast_ids": created_forecast_ids, "horizon_rows": horizon_rows,
         "dip_context_forecast_ids": dip_context_forecast_ids,
         "drivers": drivers, "invalidation_risks": invalidation_risks,
@@ -1117,8 +1119,11 @@ def print_recommendation_card(result):
     if not result:
         return
     ens = result["primary_horizon"]["ensemble"]
+    basis_days = result.get("recommendation_basis_horizon_days")
+    basis_text = (f"{basis_days} trading day{'s' if basis_days != 1 else ''}"
+                  if basis_days is not None else "unknown horizon")
     print(f"\n{result['ticker']} | {result['recommendation_label']} | "
-          f"5 trading days")
+          f"{basis_text}")
     print(f"Effective analysis price: {result['effective_price']:.2f}"
           f"{' (manual override)' if result['intraday_proxy'] else ''}")
     if ens:

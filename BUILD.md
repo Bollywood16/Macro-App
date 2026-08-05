@@ -1,5 +1,10 @@
 Read BUILD.md and follow it. This is an upgrade to the existing app — inventory the repo first and show me your integration plan before writing any code.# Market Memory — Upgrade Build (for Claude Code)
 
+> **Superseded numbering:** this file's §6 phase lettering is superseded by
+> [`MARKET_MEMORY_V2_BUILD.md`](MARKET_MEMORY_V2_BUILD.md), the canonical build
+> spec. Where the two disagree, `MARKET_MEMORY_V2_BUILD.md` wins. The rest of
+> this file (prime directives, engine/schema/frontend inventory) still stands.
+
 **Target repo:** `github.com/Bollywood16/Macro-App` (existing app — this is an UPGRADE, not a greenfield build).
 **Read this whole file before touching anything.** This package contains the engines, components, SQL, and mockups produced in a design session on 2026-07-17. Your job is to integrate them into the existing app, preserving what works.
 

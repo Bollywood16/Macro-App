@@ -66,8 +66,15 @@ vocabulary (`'forecast'` | `'dip_context'`), which is exactly the
 distinction this column encodes — one name, one meaning, no clash with the
 existing JSON field.
 
-**Status: code complete 2026-08-05, not yet applied to the live DB/edge
-function.** Three artifacts, in required deploy order:
+**Status: live as of 2026-08-05.** Migration applied and edge function
+redeployed, in required order; verified directly against the live DB
+afterward — `voter` column exists (`NOT NULL`, default `'forecast'`,
+check constraint, index), backfill was correct (2073 `forecast` / 2
+`dip_context` rows), and a fresh on-demand SMH run through the
+redeployed function wrote new rows with `voter` set correctly end-to-end
+(6 ensemble horizons `forecast`, 2 dip_context horizons `dip_context`,
+all timestamped to that run, none of them the earlier backfilled rows).
+Three artifacts, in required deploy order:
 
 1. `db/004_forecast_voter_column.sql` — adds `voter`, backfills every
    existing row (both ensemble and dip_context rows are already live —

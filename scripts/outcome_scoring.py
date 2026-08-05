@@ -38,6 +38,7 @@ FIELDS (mirrors the `outcomes` table exactly, db/001_market_memory_schema.sql)
   log_loss = standard binary log loss, p_positive clipped away from 0/1.
 """
 
+import argparse
 import math
 import os
 import sys
@@ -126,43 +127,27 @@ def score_forecast(row, close: pd.Series, spy_aligned: pd.Series):
     }
 
 
-def main():
-    resp = fe.mm_journal("list_pending_outcomes", {"limit": PENDING_LIMIT})
-    pending = (resp or {}).get("forecasts") or []
-    if not pending:
-        print("no pending forecasts to evaluate")
-        return 0
-
+def run_page(pending, close_cache, spy_close):
+    """Score and persist one page of pending_outcomes rows. close_cache is
+    a ticker->Series dict shared across pages/tickers by the caller so a
+    multi-page --rebuild run fetches each ticker's price history once,
+    not once per page."""
     by_ticker = {}
     for row in pending:
         by_ticker.setdefault(row["ticker"], []).append(row)
 
-    spy_close = fe.re_engine.fetch_history("SPY")
-
-    # B3 guard: list_pending_outcomes now reads the pending_outcomes view
-    # (redefined by 20260805014219_trading_date_column.sql to join on
-    # trading_date, not as_of_ts -- see B6), which already pre-filters to
-    # trading_date + horizon_days calendar-elapsed AND no existing outcome
-    # row -- so `pending` here is never "obviously too fresh" or "already
-    # resolved" by construction. not_yet_matured still happens (the view's
-    # calendar-day filter is a lower bound, not the real trading-day bar
-    # count -- see the view's own comment), so it isn't counted as a
-    # failure. persist_errored is: score_forecast confirmed a real,
-    # matured outcome and mm_journal's create_outcome call failed to save
-    # it. That combination -- a real outcome computed, zero actually
-    # persisted -- is exactly the failure mode that let this resolver
-    # silently stall for three weeks (list_pending_outcomes kept handing
-    # back the same already-resolved rows, which duplicate-keyed on every
-    # create_outcome call once outcomes_forecast_uniq existed). Catching
-    # it here means any future recurrence -- of this bug or a new one --
-    # fails the run loudly instead of posting a green checkmark.
-    matured, not_yet, scoring_errored, persist_errored, fetch_errored = 0, 0, 0, 0, 0
+    counts = dict(matured=0, not_yet=0, scoring_errored=0,
+                  persist_errored=0, fetch_errored=0)
     for ticker, rows in by_ticker.items():
-        try:
-            close = fe.re_engine.fetch_history(ticker)
-        except Exception as e:
-            print(f"[warn] skipping {ticker}: {e}")
-            fetch_errored += len(rows)
+        if ticker not in close_cache:
+            try:
+                close_cache[ticker] = fe.re_engine.fetch_history(ticker)
+            except Exception as e:
+                print(f"[warn] skipping {ticker}: {e}")
+                close_cache[ticker] = None
+        close = close_cache[ticker]
+        if close is None:
+            counts["fetch_errored"] += len(rows)
             continue
         spy_aligned = close if ticker == "SPY" else spy_close.reindex(close.index).ffill()
 
@@ -171,26 +156,104 @@ def main():
                 outcome = score_forecast(row, close, spy_aligned)
             except Exception as e:
                 print(f"[warn] {ticker} forecast {row.get('id')}: scoring failed: {e}")
-                scoring_errored += 1
+                counts["scoring_errored"] += 1
                 continue
             if outcome is None:
-                not_yet += 1
+                counts["not_yet"] += 1
                 continue
             resp = fe.mm_journal("create_outcome", outcome)
             if resp is None or "outcome" not in resp:
                 print(f"[warn] {ticker} forecast {row['id']}: create_outcome failed")
-                persist_errored += 1
+                counts["persist_errored"] += 1
             else:
-                matured += 1
+                counts["matured"] += 1
+    return counts
 
-    print(f"pending={len(pending)} matured_and_scored={matured} "
-          f"not_yet_matured={not_yet} scoring_errored={scoring_errored} "
-          f"persist_errored={persist_errored} fetch_errored={fetch_errored}")
 
-    if matured == 0 and persist_errored > 0:
-        print(f"[error] {persist_errored} forecast(s) scored as genuinely "
-              f"matured this run but none persisted -- treating this as a "
-              f"failed run rather than a quiet no-op.")
+def main():
+    ap = argparse.ArgumentParser(description="Outcome Scoring")
+    ap.add_argument(
+        "--rebuild", action="store_true",
+        help="Full-ledger rebuild mode: loop list_pending_outcomes to "
+             "exhaustion instead of a single PENDING_LIMIT-capped pass. "
+             "Pair with a backup + TRUNCATE outcomes first -- this is meant "
+             "to run against an empty (or backed-up) outcomes table "
+             "whenever anchoring or benchmark logic changes. A ledger "
+             "mixing outcomes computed under two different methodologies "
+             "can't be aggregated or told apart later, so this is the "
+             "reusable script for redoing all of it under one, not a "
+             "one-off (B2).")
+    args = ap.parse_args()
+
+    close_cache = {}
+    spy_close = None
+    totals = dict(pending=0, matured=0, not_yet=0, scoring_errored=0,
+                  persist_errored=0, fetch_errored=0)
+    page = 0
+
+    while True:
+        resp = fe.mm_journal("list_pending_outcomes", {"limit": PENDING_LIMIT})
+        pending = (resp or {}).get("forecasts") or []
+        if not pending:
+            if page == 0:
+                print("no pending forecasts to evaluate")
+            break
+        page += 1
+        totals["pending"] += len(pending)
+
+        if spy_close is None:
+            spy_close = fe.re_engine.fetch_history("SPY")
+            close_cache["SPY"] = spy_close
+
+        # B3 guard context: list_pending_outcomes now reads the
+        # pending_outcomes view (redefined by
+        # 20260805014219_trading_date_column.sql to join on trading_date,
+        # not as_of_ts -- see B6), which already pre-filters to
+        # trading_date + horizon_days calendar-elapsed AND no existing
+        # outcome row -- so `pending` here is never "obviously too fresh"
+        # or "already resolved" by construction.
+        page_counts = run_page(pending, close_cache, spy_close)
+        for k, v in page_counts.items():
+            totals[k] += v
+        print(f"[page {page}] pending={len(pending)} "
+              f"matured_and_scored={page_counts['matured']} "
+              f"not_yet_matured={page_counts['not_yet']} "
+              f"scoring_errored={page_counts['scoring_errored']} "
+              f"persist_errored={page_counts['persist_errored']} "
+              f"fetch_errored={page_counts['fetch_errored']}")
+
+        if not args.rebuild:
+            break
+        if page_counts["matured"] == 0:
+            # Nothing on this page actually resolved -- every remaining row
+            # is either not-yet-matured (list_pending_outcomes will keep
+            # handing back the same rows forever, since none of them got an
+            # outcome written to remove them from the view) or failing.
+            # Looping again can't make progress either way; stop rather
+            # than spin.
+            break
+
+    print(f"TOTAL pending={totals['pending']} "
+          f"matured_and_scored={totals['matured']} "
+          f"not_yet_matured={totals['not_yet']} "
+          f"scoring_errored={totals['scoring_errored']} "
+          f"persist_errored={totals['persist_errored']} "
+          f"fetch_errored={totals['fetch_errored']} pages={page}")
+
+    # not_yet_matured isn't counted as a failure (see B3 guard context
+    # above). persist_errored is: score_forecast confirmed a real, matured
+    # outcome and mm_journal's create_outcome call failed to save it. That
+    # combination -- a real outcome computed, zero actually persisted --
+    # is exactly the failure mode that let this resolver silently stall
+    # for three weeks (list_pending_outcomes kept handing back the same
+    # already-resolved rows, which duplicate-keyed on every create_outcome
+    # call once outcomes_forecast_uniq existed). Catching it here means
+    # any future recurrence -- of this bug or a new one -- fails the run
+    # loudly instead of posting a green checkmark.
+    if totals["matured"] == 0 and totals["persist_errored"] > 0:
+        print(f"[error] {totals['persist_errored']} forecast(s) scored as "
+              f"genuinely matured this run but none persisted -- treating "
+              f"this as a failed run rather than a quiet no-op.")
         return 1
     return 0
 

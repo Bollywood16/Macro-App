@@ -3,7 +3,13 @@ name: Outcome Scoring
 on:
   schedule:
     - cron: "35 22 * * 1-5"   # weekdays 22:35 UTC — after the Scanner
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      rebuild:
+        description: "Full-ledger rebuild (B2) -- loop to exhaustion instead of one capped pass. Pair with a backup + TRUNCATE outcomes first; never run this against a table that still has rows you want to keep."
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   run-outcome-scoring:
@@ -18,4 +24,9 @@ jobs:
       - name: Run outcome scoring
         env:
           APP_PASSPHRASE: ${{ secrets.APP_PASSPHRASE }}
-        run: python scripts/outcome_scoring.py
+        run: |
+          ARGS=""
+          if [ "${{ inputs.rebuild }}" = "true" ]; then
+            ARGS="--rebuild"
+          fi
+          python scripts/outcome_scoring.py $ARGS

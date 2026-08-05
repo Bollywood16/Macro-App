@@ -749,3 +749,80 @@ data pattern — not a symptom of something broken in `replay()`, the PIT store,
 the row-building logic. Proceeding to migration + redeploy + live-path verification +
 real-write SPY pilot, per the agreed sequence — the 17-way matrix stays undispatched
 until that pilot is itself reviewed.
+
+---
+
+## 10. Migration applied, mm-journal redeployed, live path verified, real-write SPY pilot — matrix still undispatched
+
+All four steps of the agreed sequence completed, in order, this session:
+
+### 10.1 Migration applied
+
+`npx supabase migration list` confirmed `20260805150000_forecasts_replay_table.sql`
+was the only local migration with an empty `remote` field — every earlier migration's
+`local`/`remote` timestamps already matched. `npx supabase db push` applied it;
+`migration list` re-run afterward confirmed `remote` now matches `local` for all 8
+migrations, including this one.
+
+### 10.2 `mm-journal` redeployed
+
+`npx supabase functions deploy mm-journal --project-ref anzbpxqvibgpxnwgyqoc`.
+`functions list` confirmed the version bumped 9 → 10, status `ACTIVE`.
+
+### 10.3 Live write path verified — and a real, pre-existing bug found in the process
+
+`APP_PASSPHRASE=... python3 scripts/forecast_engine.py --ticker SPY --source chat`
+(a real, non-dry-run, on-demand run — the same call shape the live app/scheduler
+makes). Confirmed via `get_latest_forecast`: a fresh `forecasts` row for SPY,
+`as_of_ts` matching this run's own timestamp to the second. **The live write path
+survived the redeploy.**
+
+**Found along the way, not fixed, flagged for whoever owns it:** this run's own log
+showed 8 `create_forecast` retry failures — `HTTP 400 {"error":"missing fields",
+"missing":["regime_model_version"]}`. Traced to `data/pending_forecast_writes.jsonl`:
+8 entries, all from one stale `SMH` run at `2026-08-05T20:26:24Z`, staged **before**
+`regime_model_version` became a required field. `flush_pending_writes()` /
+`rewrite_pending_writes()` (`forecast_engine.py`) have no staleness detection or
+dead-letter path — a staged payload is resent byte-for-byte on every future run
+forever, so if the required-field shape ever changes after a write is staged, that
+entry can never succeed again and will fail identically on every single run from now
+on, cluttering the log the same way each time. This predates this session's changes
+entirely (the entries are from `20:26:24Z`, hours before the `regime_model_version`
+migration referenced in `docs/CREDIT_SERIES.md` even landed) — not caused by C4's
+work, just surfaced by it. Worth a real fix (detect a `400 missing fields` response
+specifically and drop the entry with a loud error, rather than retrying forever) —
+not built here, out of scope for this pass.
+
+### 10.4 Real-write SPY pilot — measured write cost, not estimated
+
+`APP_PASSPHRASE=... python3 scripts/replay_backfill.py --ticker SPY --start
+2005-01-01 --end 2025-12-31` (no `--dry-run` — real writes to `forecasts_replay`,
+same table the redeployed function now serves).
+
+**37.2 min elapsed, 31,698 rows written, 5,283/5,283 dates scored.** Against §9's
+dry-run figure of 36.8 min for the identical compute with writes skipped: **the
+measured write overhead is ~24 seconds total for SPY's full 20-year backfill** — 64
+batches (31,698 rows ÷ 500/batch), ≈ 380ms/batch. §8.2's estimate ("~9 min total
+across all 17 jobs, ~30-40s per matrix job, 300-800ms/batch assumed") holds up as
+**slightly conservative, not optimistic** — the real number for SPY (the largest
+ticker) came in under the low end of the per-job estimate.
+
+**Verified via `forecasts_replay_block_counts`** (queried after the run, not just
+trusted from the script's own exit code): `forecast_1d/5d/20d/60d` and
+`dip_context_21d/63d` each show exactly `5,283` — matches the dry-run's predicted
+block counts exactly, confirms no rows were dropped, duplicated, or misrouted.
+**Verified `--resume`'s own query** (`latest_forecast_replay_date`, both voters):
+returns `2025-12-31` for both `forecast` and `dip_context` — the resume mechanism
+correctly finds this run's own endpoint.
+
+**Side effect worth noting, not a problem:** `SPY` is now genuinely backfilled in
+`forecasts_replay` — this pilot's writes are real progress toward C4, not throwaway
+test data. Dispatching the full 17-way matrix later can either skip `SPY` or run it
+with `--resume` (which re-writes its last date once, per §8.1's documented tradeoff,
+and is otherwise a no-op).
+
+### 10.5 Matrix: still not dispatched
+
+Everything above required live Supabase access (migration + deploy + two write
+runs) — all deliberate, all logged here, none of it the 17-way `replay-backfill.yml`
+matrix itself. That dispatch is still pending explicit go-ahead.

@@ -47,13 +47,17 @@ Last updated: 2026-08-05
 3. ~~**C3** — point-in-time Parquet store, `as_of()`~~ Done — `scripts/pit_store.py`.
    Git-history extraction was investigated and rejected as a data source (`docs/
    C3_DESIGN.md` §1) — nothing to extract.
-4. **C4** — historical backfill (dedicated GH Actions workflow). **Built, NOT
-   dispatched** — `.github/workflows/replay-backfill.yml`, `scripts/
-   replay_backfill.py`, `forecasts_replay` migration + 3 new mm-journal ops, all
-   committed for review. Estimated runtime ~35-40 min wall-clock (17-way ticker
-   matrix; ~9.9 hours if run as one sequential job — see `docs/C3_DESIGN.md` §8 for
-   the measured breakdown). **Not dispatchable yet**: the migration hasn't been run
-   and the edge function hasn't been redeployed (§8.3's deployment order).
+4. **C4** — historical backfill (dedicated GH Actions workflow). Code built,
+   **17-way matrix still NOT dispatched** — `.github/workflows/replay-backfill.yml`,
+   `scripts/replay_backfill.py`, `forecasts_replay` migration + 3 new mm-journal ops.
+   Since built: **migration applied, `mm-journal` redeployed (v9→v10), live write
+   path re-verified post-deploy, dry-run + real-write SPY pilots both run to
+   completion** — `docs/C3_DESIGN.md` §9-10. Real-write measured: 37.2 min / 31,698
+   rows for SPY's full 2005-2025 window (vs. 36.8 min dry-run — ~24s of that is
+   actual write time, confirming §8.2's estimate was conservative). `SPY` is now
+   genuinely backfilled in `forecasts_replay` as a side effect. **The 17-way matrix
+   itself remains undispatched pending explicit go-ahead** — everything above was
+   single-ticker, reviewed at each step.
 5. **D** — scoring on the replay ledger
 6. **E / F / G / H** — bottom-tell library, flush + cross-asset + ATH + committee + event mode, output rebuild, handoff
 

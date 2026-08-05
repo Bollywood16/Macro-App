@@ -120,7 +120,7 @@ def main():
     pending = (resp or {}).get("forecasts") or []
     if not pending:
         print("no pending forecasts to evaluate")
-        return
+        return 0
 
     by_ticker = {}
     for row in pending:
@@ -128,13 +128,29 @@ def main():
 
     spy_close = fe.re_engine.fetch_history("SPY")
 
-    matured, not_yet, errored = 0, 0, 0
+    # B3 guard: list_pending_outcomes now reads the pending_outcomes view
+    # (20260805010941_pending_outcomes_view.sql), which already pre-filters
+    # to as_of_ts + horizon_days calendar-elapsed AND no existing outcome
+    # row -- so `pending` here is never "obviously too fresh" or "already
+    # resolved" by construction. not_yet_matured still happens (the view's
+    # calendar-day filter is a lower bound, not the real trading-day bar
+    # count -- see the view's own comment), so it isn't counted as a
+    # failure. persist_errored is: score_forecast confirmed a real,
+    # matured outcome and mm_journal's create_outcome call failed to save
+    # it. That combination -- a real outcome computed, zero actually
+    # persisted -- is exactly the failure mode that let this resolver
+    # silently stall for three weeks (list_pending_outcomes kept handing
+    # back the same already-resolved rows, which duplicate-keyed on every
+    # create_outcome call once outcomes_forecast_uniq existed). Catching
+    # it here means any future recurrence -- of this bug or a new one --
+    # fails the run loudly instead of posting a green checkmark.
+    matured, not_yet, scoring_errored, persist_errored, fetch_errored = 0, 0, 0, 0, 0
     for ticker, rows in by_ticker.items():
         try:
             close = fe.re_engine.fetch_history(ticker)
         except Exception as e:
             print(f"[warn] skipping {ticker}: {e}")
-            errored += len(rows)
+            fetch_errored += len(rows)
             continue
         spy_aligned = close if ticker == "SPY" else spy_close.reindex(close.index).ffill()
 
@@ -143,7 +159,7 @@ def main():
                 outcome = score_forecast(row, close, spy_aligned)
             except Exception as e:
                 print(f"[warn] {ticker} forecast {row.get('id')}: scoring failed: {e}")
-                errored += 1
+                scoring_errored += 1
                 continue
             if outcome is None:
                 not_yet += 1
@@ -151,12 +167,20 @@ def main():
             resp = fe.mm_journal("create_outcome", outcome)
             if resp is None or "outcome" not in resp:
                 print(f"[warn] {ticker} forecast {row['id']}: create_outcome failed")
-                errored += 1
+                persist_errored += 1
             else:
                 matured += 1
 
     print(f"pending={len(pending)} matured_and_scored={matured} "
-          f"not_yet_matured={not_yet} errored={errored}")
+          f"not_yet_matured={not_yet} scoring_errored={scoring_errored} "
+          f"persist_errored={persist_errored} fetch_errored={fetch_errored}")
+
+    if matured == 0 and persist_errored > 0:
+        print(f"[error] {persist_errored} forecast(s) scored as genuinely "
+              f"matured this run but none persisted -- treating this as a "
+              f"failed run rather than a quiet no-op.")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

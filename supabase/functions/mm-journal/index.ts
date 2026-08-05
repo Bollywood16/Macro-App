@@ -262,15 +262,24 @@ Deno.serve(async (req) => {
       }
 
       case "list_pending_outcomes": {
+        // B3 fix (20260805010941_pending_outcomes_view.sql): this used to
+        // query forecasts directly with a `.select("*, outcomes!left(id))
+        // .is("outcomes.id", null)` embedded-filter, which does not
+        // reliably express "no matching outcomes row" in PostgREST -- it
+        // was returning the same oldest-500-by-as_of_ts forecasts on every
+        // run regardless of resolution status, most of which were already
+        // resolved, wasting the entire run on outcomes_forecast_uniq
+        // duplicate-key errors instead of reaching the real backlog. The
+        // view does the anti-join (NOT EXISTS) plus a maturity pre-filter
+        // in real SQL, which Postgres can actually plan correctly.
         const limit = Number(payload.limit) > 0 ? Number(payload.limit) : 500;
         const { data, error } = await supabase
-          .from("forecasts")
-          .select("*, outcomes!left(id)")
-          .is("outcomes.id", null)
+          .from("pending_outcomes")
+          .select("*")
           .order("as_of_ts", { ascending: true })
           .limit(limit);
         if (error) throw error;
-        return json({ forecasts: (data ?? []).map(({ outcomes, ...f }) => f) });
+        return json({ forecasts: data ?? [] });
       }
 
       case "create_outcome": {

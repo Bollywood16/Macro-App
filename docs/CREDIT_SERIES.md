@@ -773,6 +773,28 @@ blaming the gate for something that was fixed at each ticker's listing date, lon
 before Phase D's replay window even starts. Noted in `MARKET_MEMORY_V2_BUILD.md` §5
 directly.
 
+### 7.4b The confidence-function inversion — logged, not fixed (2026-08-05)
+
+Per instruction: **logged in `MARKET_MEMORY_V2_BUILD.md` §5 (Phase D) as "The
+confidence-function inversion," thresholds not retuned by hand.** Two structural
+properties, both proven in §7.1, restated here in one place since they're the actual
+defect underneath everything else in this section:
+
+1. **The conjunction-depth penalty subtracts more than depth-3 matching can add back.**
+   `depth=3`'s ceiling (61.4) sits below the "high" cutoff (70) for every ticker,
+   unconditionally — the most rigorous conditioning mode available can never itself be
+   reported as high-confidence, while a shallower `depth=1` match has a *higher*
+   achievable ceiling (85). Backwards from what depth is supposed to reward.
+2. **The "moderate" bar is a function of listing date, not evidence quality** —
+   `0.651` vs. `0.868` consistency required, entirely determined by `decades_cap`.
+
+Both are now a named Phase D question with a specific, cheap test attached (not "look
+into this sometime"): restrict any label-quality check to the 3 of 17 tickers
+(`SPY, XLV, XLU`) where the label is even capable of varying, and check whether it
+correlates with realized outcomes there. A field frozen for 14 of 17 tickers has to
+earn its place on the remaining 3 or come off the card — full reasoning and the exact
+test spec are in `MARKET_MEMORY_V2_BUILD.md` §5, not duplicated here.
+
 ### 7.5 Fixed in this pass: `dip_context`'s missing sample provenance (§6.2)
 
 Per instruction, done ahead of C4 rather than left as a flagged gap: `engines/

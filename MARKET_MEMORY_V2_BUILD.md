@@ -283,6 +283,47 @@ Display permanently:
   contributing ~no information looks identical, pooled, to a rare tuple contributing a
   lot. This split is what tells them apart.
 - **Per-ticker record**, on the tear sheet itself
+- **`dip_context` label-vs-outcome correlation, tickers where the label actually
+  varies only** — see "The confidence-function inversion" below. Not a fix, a test.
+
+### The confidence-function inversion D must settle
+
+Logged 2026-08-05 (`docs/CREDIT_SERIES.md` §7.1), **not fixed** — thresholds are not
+being retuned by hand. Two structural properties of `deflated_confidence()`'s formula,
+proven analytically, not just observed:
+
+1. **The conjunction-depth penalty subtracts more than depth-3 matching can ever add
+   back.** At `depth=3` (the depth §6.5 found live queries landing on for the common
+   case), the base score's non-consistency factors cap at `0.85³ × min(1, decades/4) =
+   0.6141` even at the best possible `decades` value any ticker can reach. Multiplied
+   by the maximum possible `consistency` (1.0) and the maximum possible deflation
+   (1.0), the ceiling is `61.4` — below the `70` cutoff for "high" confidence, for
+   every ticker, every day, unconditionally. **The most rigorous conditioning mode
+   this formula has (a full 3-dimensional regime match) is the one mode that can
+   never itself be reported as high-confidence** — a shallower, less rigorous match
+   (`depth=1`, penalty `0.85`) has a *higher* achievable ceiling (`85`) than the
+   deeper, more specific one. That's backwards from what "depth" is supposed to
+   reward.
+2. **The "moderate" bar is a function of when the ticker started trading, not the
+   quality of any specific read.** `decades_cap` — fixed forever at a ticker's
+   listing — sets the bar at consistency `≥ 0.651` for the 12 tickers listed ≤1999
+   and `≥ 0.868` for the 5 listed 2000+ (`SMH, GLD, RSP, IWM, MGK`). Two tickers with
+   identical dip-and-regime evidence on a given day can receive different
+   confidence labels solely because one of them IPO'd earlier.
+
+**The test D should run, cheaply, once real replay outcomes exist:** of the 17 replay
+tickers, only 3 (`SPY, XLV, XLU`) showed the label capable of varying at all under
+today's evidence (the other 14 are frozen at "low / likely mined" regardless of `n`,
+per §7.2). **Does `dip_context`'s confidence label correlate with realized outcome
+quality on those 3 tickers — the only tickers where it's structurally possible for the
+label to be anything other than a ticker constant?** If it does, the label is doing
+real work on the cases where it's live, and should stay, restricted to tickers where
+it's not already at its ceiling/floor. If it doesn't, the label was never actually
+informative even on the 3 tickers where it wasn't already frozen, and it should come
+off the card rather than be retuned — **a field frozen for 14 of 17 tickers needs to
+earn its place on the remaining 3, not be assumed useful because it's the only signal
+currently displayed.** This is answerable directly from the replay ledger's own
+per-ticker Brier/hit-rate once C4 backfills, no new instrumentation required.
 
 ### The open design question D must settle
 

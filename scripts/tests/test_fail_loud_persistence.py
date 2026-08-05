@@ -11,10 +11,23 @@ Unit-level (mocks mm_journal directly rather than running a full
 run_one()) so this stays fast enough to run every time, not just when
 someone remembers to check manually.
 
+IMPORTANT: this test used to read/write/remove `forecast_engine.
+PENDING_WRITES_PATH` directly -- the REAL `data/pending_forecast_writes.jsonl`
+queue, Fix 5's write-ahead recovery log for forecasts that failed to persist.
+Running this test during a real outage could have destroyed genuinely queued,
+not-yet-recovered forecasts. Fixed here: `fe.PENDING_WRITES_PATH` is
+monkeypatched to a tempdir path for the duration of every test in this file,
+restored in a `finally`, and the real file's contents are hashed before/after
+the whole run to assert it was never touched -- not just avoided by
+convention, checked.
+
 Run: python3 scripts/tests/test_fail_loud_persistence.py
 """
+import hashlib
 import os
+import shutil
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
@@ -28,6 +41,18 @@ TEST_PAYLOAD = {
     "horizon_days": 5, "model_version": "test-model", "voter": "forecast",
 }
 
+REAL_PENDING_WRITES_PATH = fe.PENDING_WRITES_PATH  # captured before any patching
+
+
+def _hash_real_queue():
+    """None if the real queue file doesn't exist, else a content hash --
+    covers both "must still not exist" and "must be byte-for-byte unchanged"
+    without having to special-case either in the caller."""
+    if not os.path.exists(REAL_PENDING_WRITES_PATH):
+        return None
+    with open(REAL_PENDING_WRITES_PATH, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
 
 def reset_staging():
     fe._run_write_outcomes.clear()
@@ -35,7 +60,7 @@ def reset_staging():
         os.remove(fe.PENDING_WRITES_PATH)
 
 
-def main():
+def run_tests():
     ok = True
     reset_staging()
 
@@ -84,6 +109,32 @@ def main():
 
     reset_staging()
     return 0 if ok else 1
+
+
+def main():
+    before_hash = _hash_real_queue()
+
+    tmp_dir = tempfile.mkdtemp(prefix="pending_writes_test_")
+    tmp_path = os.path.join(tmp_dir, "pending_forecast_writes.jsonl")
+    fe.PENDING_WRITES_PATH = tmp_path  # every fe.* function reads this global
+                                        # at call time, so this redirects
+                                        # stage/flush/rewrite for the whole run
+    try:
+        rc = run_tests()
+    finally:
+        fe.PENDING_WRITES_PATH = REAL_PENDING_WRITES_PATH
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    after_hash = _hash_real_queue()
+    if after_hash == before_hash:
+        print("PASS: the real data/pending_forecast_writes.jsonl queue was "
+              "untouched by this test run.")
+    else:
+        print("FAIL: the real pending-writes queue changed during this test "
+              "run -- it should have been fully isolated to a tempdir.")
+        rc = 1
+
+    return rc
 
 
 if __name__ == "__main__":

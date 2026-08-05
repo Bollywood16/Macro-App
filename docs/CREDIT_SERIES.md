@@ -477,3 +477,184 @@ against the live Supabase project and the edge function hasn't been redeployed**
 last paragraph) — this is committed code, not yet a live behavior change. C3 (the
 replay/backfill design this document was originally requested alongside) remains
 proposal-only, untouched by this pass.
+
+---
+
+## 6. Pre-C3 verification pass (2026-08-05)
+
+Five questions asked before starting C3, all answered by running the actual live
+pipeline (not by reading source and inferring) — `SMH`, query date 2026-08-05,
+`current_regime = ('calm', 'flat', 'above')`. No code changed in this pass: this is
+measurement only, confirming what §0b's swap actually did to the confidence machinery
+it feeds.
+
+### 6.1 Is `deflated_confidence()`'s gate now effectively dead?
+
+**No — but its shape has changed in a way worth flagging.** `dip_context`'s own pool
+for SMH today: `n=45` matched dip-and-regime episodes (44/43 after the horizon-specific
+`end < n` filter, see §6.3), `consistency=0.5682`, `depth=3`, `decades=3`, `searched=1`
+→ **score=0, label="low / likely mined"**. Up from the `n=9` read on 7/29, confirming
+the credit fix did enlarge the pool (~5x), but the label is unchanged.
+
+Why, precisely — not "it's still low," but the actual mechanism:
+
+- The base formula's sample-size term (`min(1, n/12)`) **saturates at n=12**. Going
+  from 9→45→163 moves this term from 0.75→1.0→1.0 — the swap bought the last quarter of
+  that term and nothing more; everything past n≈12 is invisible to this factor.
+- `decades = len({year // 10 for matched dates})` is **structurally capped at 3 for
+  SMH forever**, not just today: the ETF launched 2000-06-05, so its own dip history can
+  only ever span the 2000s/2010s/2020s — a 4th decade bucket is unreachable regardless
+  of how far the credit series' own history goes back (`min(1, decades/4)` is stuck at
+  0.75). This is a property of the ticker's listing date, not of the credit fix, and
+  won't move with any future data change.
+- With `depth=3` (`0.85³ = 0.6141`) and today's `consistency=0.5682`, the base score is
+  `100 × 0.5682 × 0.6141 × 0.75 ≈ 26.2`. **This is a hard ceiling on the achievable
+  score at today's consistency** — the deflation multiplier only ever multiplies this
+  down further (max value 1, approached as n→∞), it can never push the product above
+  26.2. Since the "moderate" cutoff is 40, **no value of n — not 163, not 10,000 —
+  reaches "moderate" at today's consistency/depth/decades.** Swept `n` from 1 to 500
+  holding consistency/depth/decades fixed: label never changes from "low / likely
+  mined."
+- What *would* move it: consistency, not n. Sweeping consistency at `n=163, depth=3,
+  decades=3` (search unchanged): stays "low / likely mined" through consistency=0.75
+  (score 38), crosses to "moderate" at consistency≈0.80 (score 42). Solving the base
+  formula directly: `moderate` requires `consistency ≳ 40 / (100 × 0.6141 × 0.75) ≈
+  0.868` at this depth/decades combination, full stop, independent of n once n clears
+  the ~12 saturation point.
+
+**Answer to "is the gate disarmed":** not by this fix. The credit fix removed the
+part of the penalty that was an artifact of data scarcity (n<12), which is a real and
+correct improvement — but it left the two penalties that were never about data
+scarcity (depth-3's `0.85³` conjunction discount, and SMH's decades ceiling) fully
+intact, and those two alone cap `dip_context`'s achievable score for any
+weak-directional (`consistency` near 0.5–0.75) read on this ticker. The gate is
+neither dead nor unchanged — it's now a **consistency-only gate** for tickers/regimes
+like SMH's today where n and decades are no longer the binding constraint. For a
+different ticker with a longer listing history (decades=4 reachable) or a stronger
+directional read, the same fix could plausibly flip the label, so this reading is
+SMH-specific and should be re-run per-ticker before being treated as a general
+statement about the gate. **Recommend re-running this exact sweep across the other 11
+tickers before Phase D treats the gate as calibrated one way or the other** — not done
+here, out of scope for a single-ticker verification pass.
+
+### 6.2 `dip_context`'s evidence_json has no sample-size fields at all — confirmed, not a naming mismatch
+
+Traced `persist_dip_context_forecast()` (`forecast_engine.py:886`) and
+`dip_context()`/`_horizon_stats()` (`engines/dip_context.py`) directly, then rebuilt
+the actual persisted payload for SMH's live horizons (21, 63) to check field-by-field:
+
+- `evidence_json` keys, verified by construction: `recommendation_label,
+  source_model, shadow_size, display_range, caveat, plain, volume_forensics,
+  current_drawdown_pct`. **None of `depth`, `analog_n`, `regime_n`, `earliest`,
+  `latest` (or any spelling of them — `date_start`/`date_end`/`sample_size` aren't
+  there either) exist in this dict.** This isn't a `NULL` read of a real column — the
+  keys are simply never written.
+- `regime_match_depth` (the closest thing to "depth") lives in `features_json`, not
+  `evidence_json` — one level up from where the ensemble voter's equivalent field
+  (`evidence_json.regime_match_depth`) lives, so a query written to read the same key
+  path for both voters will silently get `NULL` for `dip_context` regardless of fix.
+- `analog_n`/`regime_n` don't exist as separate concepts for this voter at all —
+  `dip_context` never runs the feature-based analog model (that's `forecast_engine`'s
+  ensemble only); it has exactly one pool (regime-and-dip matched positions), reported
+  as `n_independent` at the **top level of the `forecasts` row**, not inside
+  `evidence_json`, and not split into analog/regime components because there's only
+  ever one component here.
+- `earliest`/`latest` (the sample's date range): confirmed **not computed anywhere**
+  in `dip_context.py`. Its `_horizon_stats()` (`engines/dip_context.py:171`) is a
+  near-duplicate of `forecast_engine.horizon_stats()` but was never given the
+  `date_start`/`date_end`/`distinct_regimes` computation `forecast_engine`'s version
+  has (`forecast_engine.py:475-479`) — an omission, not a design choice recorded
+  anywhere in the module docstring.
+
+**A voter with no recorded sample date range can't be scored for
+concentration/recency bias later, exactly as flagged.** Fixing this is a small,
+additive change (mirror `forecast_engine.horizon_stats()`'s three extra fields into
+`dip_context._horizon_stats()`, thread them into `persist_dip_context_forecast()`'s
+`evidence_json`) but touches a live persisted schema shape, so it's flagged here for
+a deliberate follow-up, not fixed inline in this verification pass.
+
+### 6.3 `sample_size.date_end` — horizon-specific, not bucketed; the shared 2026-05-07 is coincidence, not a bug
+
+Confirmed directly: `date_end` is `max(episode_dates)` where `episode_dates` are the
+**entry dates** of whichever `ensemble_pos` positions survive `end = pos + horizon <
+n` (`forecast_engine.py:452-453,477`) — computed fresh per horizon, nothing bucketed.
+For SMH today:
+
+| Horizon | n | date_end | theoretical max entry date (`pos ≤ n−1−h`) | positions excluded by this horizon's cutoff |
+|---|---|---|---|---|
+| 1 | 164 | 2026-07-23 | 2026-08-04 | 0 |
+| 5 | 164 | 2026-07-23 | 2026-07-29 | 0 |
+| 20 | 163 | **2026-05-07** | 2026-07-08 | 1 |
+| 60 | 163 | **2026-05-07** | 2026-05-08 | 1 |
+| 126 | 160 | 2026-01-08 | 2026-02-03 | 4 |
+| 252 | 154 | 2025-07-08 | 2025-08-04 | 10 |
+
+20d and 60d land on the identical `2026-05-07` because **the most recent actual
+matched position** (an analog/regime-conditioned entry date, not an arbitrary cutoff)
+happens to be 2026-05-07 for both — one single ensemble position sits between the
+20d and 60d horizons' theoretical ceilings (2026-07-08 and 2026-05-08 respectively)
+and gets excluded from both by the `end < n` filter, leaving the same next-most-recent
+match as the reported `date_end` for both horizons. This is confirmed **not** a
+bucketed/shared cutoff — the mechanism is per-horizon and per-position, it's a
+coincidence of which specific dates are in the matched pool this week. The 20d pool is
+not discarding two months of usable history by design; it's one real trading-day gap
+in the matched-position calendar this week. Re-running this table on a different date
+would very likely show 20d and 60d diverge again. Not a lookahead risk, confirmed, and
+not a systematic conservatism either — no action needed.
+
+### 6.4 `n_independent` — how far the ensemble pool actually moved
+
+Pre-fix range cited in the spec: 37–42 (§1.2). Post-fix, SMH today, per-horizon `n`
+(`ensemble_pos`-derived, i.e. analog ∪ regime, gap-thinned):
+
+| Horizon | 1 | 5 | 20 | 60 | 126 | 252 |
+|---|---|---|---|---|---|---|
+| n | 164 | 164 | 163 | 163 | 160 | 154 |
+
+Roughly **4x** the pre-fix range, not the ~15-30% bump the raw regime-pool growth
+(163 vs. 26) alone would suggest — because `ensemble_pos` is the union of `analog_pos`
+(n=28, unaffected by the credit fix, drawn from full multi-decade price history
+regardless) and `regime_pos` (n=163, the part that moved), gap-thinned by
+`EPISODE_GAP=20` trading days so overlapping matches from both models collapse into
+one. The union's growth is dominated by `regime_pos` now contributing far more
+distinct (non-overlapping) episodes than before, not by `analog_pos` changing at all.
+
+### 6.5 What fraction of trading days match today's regime tuple — the loose-conditioning check
+
+For SMH, all trading days since 2003-01-01 (n=5,935):
+
+| Match level | Count | Share |
+|---|---|---|
+| Full 3-dim tuple == today's `('calm','flat','above')` | 2,504 | **42.2%** |
+| ...of those, gap-thinned to independent episodes (`regime_pos`) | 163 | 2.7% |
+| `vix='calm'` alone | 4,034 | 68.0% |
+| `credit='flat'` alone | 3,233 | 54.5% |
+| `spy_trend='above'` alone | 4,760 | 80.2% |
+
+**Today's specific tuple is a weak filter — 42% of all days since 2003 share it before
+any thinning.** Each individual dimension is doing less work than its label implies:
+`spy_trend='above'` matches 80% of days outright (SPY trades above its 200dma most of
+the time), `vix='calm'` matches 68%, and even `credit='flat'` (the widest of the three
+credit buckets by construction — the 20th–80th percentile band, i.e. 60% of the
+distribution by design) matches 54.5%, close to its theoretical maximum. **This is a
+property of today's specific regime being the common one** (calm/benign-credit/
+uptrend is the modal state of markets, not a rare one) — a rarer combination
+(`stressed`/`widening`/`below`) would filter far more aggressively by the same
+mechanism, since each of those labels covers a much smaller share of history by
+construction. The 163-episode, depth-3 "full match" label is real (not a mismeasurement — it correctly
+identifies 163 gap-thinned independent instances of this regime), but for *this
+particular* regime it is closer to a mild recency/base-rate filter than a genuine
+macro-conditioning signal, and it will not read that way from `regime_match_depth: 3`
+alone, which looks identical whether the underlying tuple is common or rare.
+
+**Recommendation for the Phase D scorecard (added to `MARKET_MEMORY_V2_BUILD.md` §5,
+not decided here):** the gate-scorecard comparison needs a regime-conditioned vs.
+unconditioned (depth-0) Brier/hit-rate comparison, **split by how common the query
+regime tuple is** (e.g. tuple's own historical match share, tertiled) — not just
+compared in aggregate. Aggregate comparison would average away exactly the effect
+found here: conditioning may add real information for rare/stressed tuples while
+adding ~nothing for common ones like today's, and a single pooled number can't
+distinguish "the regime dimension doesn't help" from "the regime dimension only helps
+when it's rare enough to matter." Tuple definition and bucket boundaries are
+unchanged by this finding, per instruction — this is a measurement recommendation for
+Phase D, not a redesign.

@@ -264,6 +264,15 @@ Display permanently:
   evidence for the confidence-gating question (see below)
 - **Cost of WAIT** — forward return of everything gated, and what shadow size returned
 - **Gate scorecard** — `voter='forecast'` vs `voter='dip_context'` Brier, head to head
+- **Regime-conditioning value** — regime-conditioned (`regime_match_depth ≥ 1`) vs.
+  unconditioned (depth-0) Brier/hit-rate, **split by how common the query regime tuple
+  is** (its own historical match share, tertiled — see `docs/CREDIT_SERIES.md` §6.5).
+  Added 2026-08-05: a pre-C3 measurement found today's SMH tuple (`calm`/`flat`/`above`)
+  matches 42% of all trading days since 2003 before gap-thinning, i.e. a 3-dimensional
+  "full match" can still be a weak filter when the tuple itself is the common case.
+  Aggregate regime-vs-unconditioned comparison would average that away — a common tuple
+  contributing ~no information looks identical, pooled, to a rare tuple contributing a
+  lot. This split is what tells them apart.
 - **Per-ticker record**, on the tear sheet itself
 
 ### The open design question D must settle

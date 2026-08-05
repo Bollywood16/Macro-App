@@ -16,6 +16,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+
 jobs:
   run-full-refresh:
     runs-on: ubuntu-latest
@@ -35,3 +38,26 @@ jobs:
             ARGS="$ARGS --dry-run"
           fi
           python scripts/forecast_engine.py $ARGS
+      # B4: see forecast-engine.yml's identical step for why this exists
+      # and why if: always() matters here.
+      - name: Commit pending-write queue if changed
+        if: always()
+        run: |
+          git config user.name "rotation-radar-bot"
+          git config user.email "actions@github.com"
+          git add data/pending_forecast_writes.jsonl 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No change to the pending-write queue"
+            exit 0
+          fi
+          git commit -m "Update pending forecast write queue"
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "Pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed -- pulling --rebase and retrying"
+            git pull --rebase origin main
+          done
+          echo "::error::Failed to push pending-write queue after 3 attempts"
+          exit 1

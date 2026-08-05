@@ -623,6 +623,133 @@ def mm_journal(op, payload):
         return None
 
 
+# ---------------------------------------- fail-loud persistence (B4)
+#
+# mm_journal() above stays fail-soft on purpose -- it's shared with
+# outcome_scoring.py and with DataContext.episodes() (an optional
+# enrichment lookup, not core output), both of which already have their
+# own considered handling of a None response. This section is specifically
+# for THIS file's own core forecast-row writes (create_quote_snapshot,
+# create_forecast): a forecast that computed successfully but didn't
+# persist is a FAILED run, not a quiet skip -- silently returning None and
+# moving on is exactly how a real outage could look identical to a normal
+# night with nothing to report.
+
+PENDING_WRITES_PATH = os.path.join(ROOT, "data", "pending_forecast_writes.jsonl")
+RESP_KEY_BY_OP = {"create_forecast": "forecast", "create_quote_snapshot": "quote_snapshot"}
+
+
+class PersistenceError(Exception):
+    """A core forecast/quote-snapshot write failed to persist."""
+
+
+_run_write_outcomes = {}  # write_id -> True once confirmed persisted, this process only
+
+
+def _write_id_for(op, payload):
+    """Deterministic id for one logical write, so re-staging the same
+    write (e.g. a retried horizon) is recognizable and de-dupable rather
+    than accumulating duplicate queue entries. create_forecast payloads
+    carry trading_date/horizon_days/model_version/voter;
+    create_quote_snapshot payloads don't (they're per-ticker, not
+    per-horizon) -- provider_ts/retrieved_ts stand in as the date
+    differentiator there so same-ticker snapshots on different days don't
+    collide onto the same write_id."""
+    date_ish = (payload.get("trading_date") or payload.get("provider_ts")
+                or payload.get("retrieved_ts") or "")
+    key = "|".join(str(v) for v in (
+        payload.get("ticker", ""), date_ish, payload.get("horizon_days", ""),
+        payload.get("model_version", ""), payload.get("voter", ""),
+    ))
+    return f"{op}:{hashlib.sha256(key.encode()).hexdigest()[:16]}"
+
+
+def stage_pending_write(op, payload):
+    """Append-before-attempt: written to disk BEFORE the POST is tried, so
+    even a hard crash mid-request (not just a caught exception) leaves a
+    retriable record. Survives across GitHub Actions runs the same way
+    every other data/*.json output in this repo does -- the workflow
+    commits it back if it changed (see forecast-engine.yml)."""
+    write_id = _write_id_for(op, payload)
+    os.makedirs(os.path.dirname(PENDING_WRITES_PATH), exist_ok=True)
+    with open(PENDING_WRITES_PATH, "a") as f:
+        f.write(json.dumps({
+            "write_id": write_id, "op": op, "payload": payload,
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+        }) + "\n")
+    return write_id
+
+
+def persist_or_raise(op, payload):
+    """The only way this file's core writes should reach mm_journal():
+    stage first, attempt, raise PersistenceError on failure (leaving the
+    staged record in place for the next run's flush_pending_writes()),
+    mark it recovered on success. Returns the response's named object
+    (e.g. payload["forecast"]) on success."""
+    write_id = stage_pending_write(op, payload)
+    resp = mm_journal(op, payload)
+    resp_key = RESP_KEY_BY_OP[op]
+    if resp is None or resp_key not in resp:
+        raise PersistenceError(
+            f"{op} failed to persist (write_id={write_id}, "
+            f"ticker={payload.get('ticker')}, "
+            f"horizon_days={payload.get('horizon_days')}) -- staged at "
+            f"{PENDING_WRITES_PATH} for retry.")
+    _run_write_outcomes[write_id] = True
+    return resp[resp_key]
+
+
+def flush_pending_writes():
+    """Retry every write staged by a prior failed run, BEFORE this run
+    does anything else. Never lose a forecast to a transient error: a
+    write that succeeds here is marked recovered; anything still pending
+    (including new failures from this run) gets collapsed back into the
+    file once, at the very end, by rewrite_pending_writes()."""
+    if not os.path.exists(PENDING_WRITES_PATH):
+        return
+    with open(PENDING_WRITES_PATH) as f:
+        lines = [ln for ln in f if ln.strip()]
+    if not lines:
+        return
+    print(f"[info] retrying {len(lines)} staged write(s) from a prior run...")
+    recovered = 0
+    for ln in lines:
+        entry = json.loads(ln)
+        resp = mm_journal(entry["op"], entry["payload"])
+        resp_key = RESP_KEY_BY_OP.get(entry["op"])
+        if resp is not None and resp_key and resp_key in resp:
+            _run_write_outcomes[entry["write_id"]] = True
+            recovered += 1
+    print(f"[info] {recovered}/{len(lines)} staged write(s) recovered.")
+
+
+def rewrite_pending_writes():
+    """Collapse the staging file down to only writes that never succeeded
+    across this whole process (the flush-at-start retry AND this run's own
+    attempts). Called once, at the very end of main(), from a finally
+    block so it runs even when the run is exiting non-zero."""
+    if not os.path.exists(PENDING_WRITES_PATH):
+        return
+    with open(PENDING_WRITES_PATH) as f:
+        lines = [ln for ln in f if ln.strip()]
+    still_pending, seen = [], set()
+    for ln in lines:
+        entry = json.loads(ln)
+        wid = entry["write_id"]
+        if wid in seen:
+            continue  # de-dup repeated staging of the same logical write
+        seen.add(wid)
+        if not _run_write_outcomes.get(wid):
+            still_pending.append(ln if ln.endswith("\n") else ln + "\n")
+    if still_pending:
+        with open(PENDING_WRITES_PATH, "w") as f:
+            f.writelines(still_pending)
+        print(f"[warn] {len(still_pending)} forecast write(s) still pending "
+              f"after this run -- staged in {PENDING_WRITES_PATH}.")
+    else:
+        os.remove(PENDING_WRITES_PATH)
+
+
 def deterministic_seed(*parts) -> int:
     """A reproducible RNG seed from arbitrary string/value parts (e.g.
     ticker, trading_date, model_version) -- NOT Python's builtin hash(),
@@ -728,12 +855,18 @@ def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
     ensemble's Brier ledger and scored on its own — the gate has been
     steering (and, before Phase A, silently overriding) the tear sheet's
     headline for a while now with no record of whether doing so has
-    helped or hurt. Never blocks the main run: mm_journal() already fails
-    soft (warns, returns None) on any persistence error, same posture as
-    every other write in this file."""
+    helped or hurt.
+
+    B4: every horizon is still attempted regardless of an earlier one
+    failing (a transient blip on one write shouldn't cost the others that
+    would have succeeded), but a failure is staged for retry and reported
+    back to the caller via failed_horizons, not silently dropped the way
+    mm_journal()'s own fail-soft return-None posture would otherwise let
+    it be -- returns (created_ids, failed_horizons)."""
     created = []
+    failed_horizons = []
     if not dc_extras or not dc_extras.get("verdict"):
-        return created
+        return created, failed_horizons
     verdict = dc_extras["verdict"]
     for h_str, stats in (dc_extras.get("horizons") or {}).items():
         if not stats:
@@ -776,9 +909,14 @@ def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
         if dry_run or not quote_snapshot_id:
             created.append(None)
             continue
-        resp = mm_journal("create_forecast", payload)
-        created.append((resp or {}).get("forecast", {}).get("id"))
-    return created
+        try:
+            forecast = persist_or_raise("create_forecast", payload)
+            created.append(forecast.get("id"))
+        except PersistenceError as e:
+            print(f"[error] {e}")
+            created.append(None)
+            failed_horizons.append(h)
+    return created, failed_horizons
 
 
 # ---------------------------------------------------------------- run one
@@ -903,8 +1041,19 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         "provider_ts": provider_ts, "retrieved_ts": retrieved_ts,
         "market_status": market_status, "is_indicative": is_indicative,
     }
-    snap_resp = None if dry_run else mm_journal("create_quote_snapshot", snap_payload)
-    quote_snapshot_id = (snap_resp or {}).get("quote_snapshot", {}).get("id")
+    quote_snapshot_id = None
+    quote_snapshot_failure_reason = None
+    if not dry_run:
+        try:
+            snapshot = persist_or_raise("create_quote_snapshot", snap_payload)
+            quote_snapshot_id = snapshot.get("id")
+        except PersistenceError as e:
+            print(f"[error] {e}")
+            # B4: without a snapshot id, every create_forecast call below
+            # is skipped (same behavior as before -- appended as None) --
+            # the difference now is this is loud and staged for retry
+            # instead of a silent, unexplained gap in the ledger.
+            quote_snapshot_failure_reason = f"quote_snapshot ({e})"
 
     horizon_rows = {}
     for h in HORIZONS:
@@ -1062,6 +1211,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
     has_vol = pd.notna(vol_21d_now) and vol_21d_now > 0
 
     created_forecast_ids = []
+    failed_ensemble_horizons = []
     for h in HORIZONS:
         ens = horizon_rows[h]["ensemble"]
         hc = horizon_confidence[h]
@@ -1142,12 +1292,27 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         if dry_run or not quote_snapshot_id:
             created_forecast_ids.append(None)
         else:
-            resp = mm_journal("create_forecast", payload)
-            created_forecast_ids.append((resp or {}).get("forecast", {}).get("id"))
+            try:
+                forecast = persist_or_raise("create_forecast", payload)
+                created_forecast_ids.append(forecast.get("id"))
+            except PersistenceError as e:
+                print(f"[error] {e}")
+                created_forecast_ids.append(None)
+                failed_ensemble_horizons.append(h)
 
-    dip_context_forecast_ids = persist_dip_context_forecast(
+    dip_context_forecast_ids, failed_dip_context_horizons = persist_dip_context_forecast(
         ticker, tearsheet_extras.get("dip_context"), quote_snapshot_id,
         effective_price, as_of, trading_date, scheduler_drift_days, dry_run)
+
+    # B4: every persistence failure across this ticker's whole run --
+    # quote snapshot, any ensemble horizon, any dip_context horizon --
+    # rolls up here. Non-empty means "this ticker computed successfully
+    # but did not fully persist," which main() treats as a failed run
+    # (non-zero exit) even though the recommendation card above still
+    # printed/displayed correctly for on-demand callers.
+    persistence_failures = list(quote_snapshot_failure_reason and [quote_snapshot_failure_reason] or [])
+    persistence_failures += [f"ensemble horizon {h}" for h in failed_ensemble_horizons]
+    persistence_failures += [f"dip_context horizon {h}" for h in failed_dip_context_horizons]
 
     return {
         "ticker": ticker, "effective_price": effective_price,
@@ -1158,6 +1323,7 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         "quote_snapshot_id": quote_snapshot_id,
         "forecast_ids": created_forecast_ids, "horizon_rows": horizon_rows,
         "dip_context_forecast_ids": dip_context_forecast_ids,
+        "persistence_failures": persistence_failures,
         "drivers": drivers, "invalidation_risks": invalidation_risks,
         "warnings": warnings, "regime": current_regime,
         "vol_21d": round(float(vol_21d_now), 4) if has_vol else None,
@@ -1272,6 +1438,11 @@ def main():
                           "for a single --ticker run with no explicit tag.")
     args = ap.parse_args()
 
+    # B4: recover anything a prior run staged and never got to persist,
+    # before this run adds anything of its own.
+    if not args.dry_run:
+        flush_pending_writes()
+
     # C1: the one seam every ohlcv/benchmark/episode fetch inside run_one()/
     # compute_tearsheet_extras() goes through, instead of calling
     # re_engine/mm_journal directly. spy_close/vix/oas/universe_prices below
@@ -1313,31 +1484,79 @@ def main():
     analog_map = load_analog_map()
 
     source = args.source or ("on_demand" if on_demand else "batch")
-    for t in tickers:
-        asset = {"ticker": t, "label": label_by_ticker.get(t, t)}
-        market_status = "closed" if not on_demand else args.market_status
-        result = run_one(asset, universe_prices, spy_close, spy_trend_df,
-                          vix, oas, args.price if on_demand else None,
-                          market_status, args.dry_run, ctx, rotation_ctx,
-                          source=source, analog_map=analog_map)
-        if on_demand:
-            if not result:
-                # A silent no-op run shows green in Actions and leaves the
-                # app UI stuck polling until it times out at 90s with no
-                # explanation. Fail loudly instead — an on-demand ticker
-                # with no usable yfinance history (delisted, too new, or a
-                # typo) is a clean, diagnosable error, not "still running".
-                print(f"[error] no forecast produced for {t}: yfinance has "
-                      f"no usable price history (need 260+ trading days).")
-                return 1
-            print_recommendation_card(result)
-        elif result:
-            ens = result["primary_horizon"]["ensemble"]
-            print(f"{t}: {result['recommendation_label']} "
-                  f"conf={result['confidence_label']} "
-                  f"n={ens['n'] if ens else 0}")
-        if not on_demand:
-            time.sleep(BATCH_TICKER_DELAY_SECONDS)
+    exit_code = 0
+    tickers_with_failures = []
+    ensemble_rows_created = 0
+    try:
+        for t in tickers:
+            asset = {"ticker": t, "label": label_by_ticker.get(t, t)}
+            market_status = "closed" if not on_demand else args.market_status
+            result = run_one(asset, universe_prices, spy_close, spy_trend_df,
+                              vix, oas, args.price if on_demand else None,
+                              market_status, args.dry_run, ctx, rotation_ctx,
+                              source=source, analog_map=analog_map)
+            if on_demand:
+                if not result:
+                    # A silent no-op run shows green in Actions and leaves the
+                    # app UI stuck polling until it times out at 90s with no
+                    # explanation. Fail loudly instead — an on-demand ticker
+                    # with no usable yfinance history (delisted, too new, or a
+                    # typo) is a clean, diagnosable error, not "still running".
+                    print(f"[error] no forecast produced for {t}: yfinance has "
+                          f"no usable price history (need 260+ trading days).")
+                    return 1
+                print_recommendation_card(result)
+            elif result:
+                ens = result["primary_horizon"]["ensemble"]
+                print(f"{t}: {result['recommendation_label']} "
+                      f"conf={result['confidence_label']} "
+                      f"n={ens['n'] if ens else 0}")
+            if result:
+                ensemble_rows_created += sum(
+                    1 for fid in result.get("forecast_ids", []) if fid)
+                # B4: computed successfully but didn't fully persist ->
+                # this is a failed run, not a quiet skip. Reported per
+                # ticker and rolled into a non-zero exit at the end, but
+                # doesn't abort the batch -- other tickers still get their
+                # own chance.
+                if result.get("persistence_failures"):
+                    tickers_with_failures.append((t, result["persistence_failures"]))
+            if not on_demand:
+                time.sleep(BATCH_TICKER_DELAY_SECONDS)
+    finally:
+        # Always collapse the staging file, even if the run above raised
+        # or is exiting non-zero -- a failed run is exactly when a staged
+        # write must survive to be retried next time, not disappear.
+        if not args.dry_run:
+            rewrite_pending_writes()
+
+    if tickers_with_failures:
+        print(f"[error] {len(tickers_with_failures)} ticker(s) had at least "
+              f"one persistence failure:")
+        for t, failures in tickers_with_failures:
+            print(f"  {t}: {', '.join(failures)}")
+        exit_code = 1
+
+    # B5: gap detector. Expected = every ticker attempted x every ensemble
+    # horizon. Skipped for dry runs (nothing is expected to persist) and
+    # for on-demand single-ticker runs (already fail loudly above on zero
+    # result; a partial-but-nonzero on-demand result is covered by the
+    # persistence_failures check above, not this grid count). A batch run
+    # that's short of the full grid -- even with zero explicit errors
+    # above, e.g. a ticker silently skipped for insufficient history --
+    # exits non-zero instead of looking identical to a complete run.
+    if not args.dry_run and not on_demand:
+        expected = len(tickers) * len(HORIZONS)
+        if ensemble_rows_created < expected:
+            print(f"[error] gap detector: expected {expected} ensemble "
+                  f"forecast rows ({len(tickers)} tickers x {len(HORIZONS)} "
+                  f"horizons), created {ensemble_rows_created}. Partial run.")
+            exit_code = 1
+        else:
+            print(f"[info] gap detector: {ensemble_rows_created}/{expected} "
+                  f"ensemble forecast rows created -- full grid.")
+
+    return exit_code
 
 
 if __name__ == "__main__":

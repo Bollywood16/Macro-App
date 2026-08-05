@@ -20,6 +20,9 @@ on:
         description: "Tag for features_json.source, e.g. 'chat' (blank = on_demand/batch default)"
         required: false
 
+permissions:
+  contents: write
+
 jobs:
   run-engine:
     runs-on: ubuntu-latest
@@ -48,3 +51,34 @@ jobs:
             ARGS="$ARGS --source ${{ inputs.source }}"
           fi
           python scripts/forecast_engine.py $ARGS
+      # B4: commits data/pending_forecast_writes.jsonl if the run above
+      # staged anything new or recovered/cleared anything staged by a
+      # prior run -- this is what makes "retried on the next run" actually
+      # true. A GitHub Actions runner is ephemeral; without committing this
+      # file back, whatever got staged here would vanish with the
+      # container, and the "next run" would never see it. `if: always()`
+      # so this runs even when the step above exits non-zero (a failed
+      # run staging a new entry is exactly the case that most needs to
+      # survive) -- the job's own conclusion still correctly reflects that
+      # step's failure regardless of what a later step does.
+      - name: Commit pending-write queue if changed
+        if: always()
+        run: |
+          git config user.name "rotation-radar-bot"
+          git config user.email "actions@github.com"
+          git add data/pending_forecast_writes.jsonl 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No change to the pending-write queue"
+            exit 0
+          fi
+          git commit -m "Update pending forecast write queue"
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "Pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed -- pulling --rebase and retrying"
+            git pull --rebase origin main
+          done
+          echo "::error::Failed to push pending-write queue after 3 attempts"
+          exit 1

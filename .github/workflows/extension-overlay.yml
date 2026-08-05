@@ -8,6 +8,16 @@ on:
 permissions:
   contents: write
 
+# B8 fix: this workflow, scanner.yml, research-engine.yml, and
+# rotation-engine.yml all commit a data/*.json digest to main in the same
+# ~1-hour evening window (21:30-22:35 UTC). Without this, whichever one's
+# push lands second gets rejected non-fast-forward and fails outright,
+# silently dropping that day's digest. A single shared concurrency group
+# across all four means only one of them ever runs at a time.
+concurrency:
+  group: digest-push-serializer
+  cancel-in-progress: false
+
 jobs:
   run-study:
     runs-on: ubuntu-latest
@@ -24,10 +34,23 @@ jobs:
       - name: Run extension overlay study
         run: python scripts/extension_overlay.py
 
-      - name: Commit dataset if changed
+      - name: Commit and push dataset if changed
         run: |
           git config user.name "rotation-radar-bot"
           git config user.email "actions@github.com"
           git add data/extension_overlay.json
-          git diff --cached --quiet && echo "No changes" || \
-            (git commit -m "Update extension overlay dataset" && git push)
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "Update extension overlay dataset"
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "Pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed -- pulling --rebase and retrying"
+            git pull --rebase origin main
+          done
+          echo "::error::Failed to push extension overlay dataset after 3 attempts"
+          exit 1

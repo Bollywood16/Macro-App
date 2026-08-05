@@ -8,6 +8,16 @@ on:
 permissions:
   contents: write
 
+# B8 fix: this workflow, scanner.yml, rotation-engine.yml, and
+# extension-overlay.yml all commit a data/*.json digest to main in the same
+# ~1-hour evening window (21:30-22:35 UTC). The single git pull --rebase
+# below narrowed the race but didn't close it (another push can still land
+# between the rebase and this workflow's own push). A shared concurrency
+# group across all four means only one of them ever runs at a time.
+concurrency:
+  group: digest-push-serializer
+  cancel-in-progress: false
+
 jobs:
   run-engine:
     runs-on: ubuntu-latest
@@ -20,15 +30,23 @@ jobs:
         run: pip install yfinance pandas
       - name: Run research engine
         run: python scripts/research_engine.py
-      - name: Commit datasets if changed
+      - name: Commit and push datasets if changed
         run: |
           git config user.name "rotation-radar-bot"
           git config user.email "actions@github.com"
           git add data/research_evidence.json data/research_digest.json
           if git diff --cached --quiet; then
             echo "No changes"
-          else
-            git commit -m "Update research engine datasets"
-            git pull --rebase
-            git push
+            exit 0
           fi
+          git commit -m "Update research engine datasets"
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "Pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed -- pulling --rebase and retrying"
+            git pull --rebase origin main
+          done
+          echo "::error::Failed to push research engine datasets after 3 attempts"
+          exit 1

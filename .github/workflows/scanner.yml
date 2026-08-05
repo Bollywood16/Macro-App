@@ -8,6 +8,18 @@ on:
 permissions:
   contents: write
 
+# B8 fix: this workflow, research-engine.yml, rotation-engine.yml, and
+# extension-overlay.yml all commit a data/*.json digest to main in the same
+# ~1-hour evening window (21:30-22:35 UTC). Without this, whichever one's
+# push lands second gets rejected non-fast-forward ("[rejected] main ->
+# main (fetch first)") and fails outright, silently dropping that day's
+# digest -- confirmed as the exact cause of scanner.yml's August failures.
+# A single shared concurrency group across all four means only one of them
+# ever runs at a time, so they queue instead of racing.
+concurrency:
+  group: digest-push-serializer
+  cancel-in-progress: false
+
 jobs:
   run-scanner:
     runs-on: ubuntu-latest
@@ -22,10 +34,27 @@ jobs:
         env:
           APP_PASSPHRASE: ${{ secrets.APP_PASSPHRASE }}
         run: python scripts/scanner.py
-      - name: Commit digest if changed
+      - name: Commit and push digest if changed
         run: |
           git config user.name "rotation-radar-bot"
           git config user.email "actions@github.com"
           git add data/scanner_digest.json
-          git diff --cached --quiet && echo "No changes" || \
-            (git commit -m "Update scanner digest" && git push)
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "Update scanner digest"
+          # Concurrency group above should mean we're never actually racing
+          # another one of these four -- this loop is defense in depth
+          # against anything else that might push to main in the gap
+          # (a manual push, a workflow outside the group).
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "Pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed -- pulling --rebase and retrying"
+            git pull --rebase origin main
+          done
+          echo "::error::Failed to push scanner digest after 3 attempts"
+          exit 1

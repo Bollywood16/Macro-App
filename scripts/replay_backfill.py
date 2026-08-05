@@ -82,9 +82,11 @@ def _forecast_rows(ticker: str, result: dict) -> list[dict]:
             "features_json": {"as_of": as_of_iso, "source": "replay",
                                "regime": {"vix": result["regime"][0],
                                           "credit": result["regime"][1],
-                                          "spy_trend": result["regime"][2]}},
+                                          "spy_trend": result["regime"][2],
+                                          "match_depth": result.get("regime_match_depth")}},
             "evidence_json": {
                 "recommendation_label": result.get("recommendation_label"),
+                "regime_match_depth": result.get("regime_match_depth"),
                 "sample_size": {"n": ens["n"] if ens else 0,
                                  "date_start": ens.get("date_start") if ens else None,
                                  "date_end": ens.get("date_end") if ens else None},

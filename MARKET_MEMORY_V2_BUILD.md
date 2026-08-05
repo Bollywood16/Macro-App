@@ -359,6 +359,26 @@ earn its place on the remaining 3, not be assumed useful because it's the only s
 currently displayed.** This is answerable directly from the replay ledger's own
 per-ticker Brier/hit-rate once C4 backfills, no new instrumentation required.
 
+**A third, separate gap — logged 2026-08-05, corrected from an initial misreading, not
+fixed:** the two structural properties above are properties of `deflated_confidence()`
+specifically, which only governs `dip_context`'s voter. **The headline, recommendation-
+driving voter (`forecast`) uses a completely different function,
+`compute_confidence()` (`forecast_engine.py`), which has no conjunction-depth term at
+all** — no `depth` parameter, no penalty scaled by how many regime dimensions matched.
+Confirmed directly: `replay('SPY', 2019-06-14)` scored `regime_match_depth=3` (a full
+3-dimensional match) with `confidence_label='high'` (0.76) on the `forecast` voter,
+the same call where `dip_context`'s own voter — governed by the depth-penalized
+formula above — read `depth=1`, `'low / likely mined'` (score 0). **This is the more
+consequential gap of the two**, since `compute_confidence()`'s output is what sets
+`recommendation_label` and reaches the card's headline, while `deflated_confidence()`'s
+depth penalty only ever gates the smaller, secondary `dip_context` read. Not fixed here
+— logged so Phase D's confidence-gating question is asked about the right function:
+whether conditioning depth predicts anything about outcome quality for the `forecast`
+voter is an open, empirical question this formula currently has no opinion on either
+way, not a penalty it gets wrong. `docs/C3_DESIGN.md` §9 has the cross-tabulation
+(`confidence_label` × `regime_match_depth`, ensemble voter, full replay window) that
+turns this from structural into concrete.
+
 ### The open design question D must settle
 
 On SMH, every horizon past 1d was confidence-gated to "low" — including 126d, which had

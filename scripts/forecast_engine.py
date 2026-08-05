@@ -1406,6 +1406,12 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
         "persistence_failures": persistence_failures,
         "drivers": drivers, "invalidation_risks": invalidation_risks,
         "warnings": warnings, "regime": current_regime,
+        # C4 pilot (docs/C3_DESIGN.md #9): regime_depth was computed above
+        # (regime_conditioned_positions()'s 3-2-1-0 backoff result) and
+        # persisted into evidence_json/features_json, but never returned --
+        # a backfill/pilot run auditing regime_match_depth's distribution
+        # over 20 years of replay had no way to read it back without this.
+        "regime_match_depth": regime_depth,
         "vol_21d": round(float(vol_21d_now), 4) if has_vol else None,
         # C2 (docs/C3_DESIGN.md, MARKET_MEMORY_V2_BUILD.md §4): replay()'s
         # entire purpose is "reconstruct the bundle the app would have

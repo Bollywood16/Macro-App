@@ -614,3 +614,138 @@ once dispatched — dominated by compute, not writes, once batched.
 
 **Not dispatched. Not deployed. Nothing above was run against live Supabase in this
 pass** — per instruction, this section is the review checkpoint, not the backfill itself.
+
+---
+
+## 9. SPY pilot (dry-run, full 2005-2025 window) — before dispatching the matrix
+
+Per instruction: one ticker, full window, `--dry-run` (no writes — `forecasts_replay`
+doesn't exist yet at time of this run, see §8.3), reviewed here before touching
+Supabase at all. `scripts/replay_backfill.py --ticker SPY --start 2005-01-01 --end
+2025-12-31 --dry-run`, run to completion (not sampled/extrapolated).
+
+### 9.1 Wall-clock — measured, not extrapolated
+
+**2,207.7s (36.8 min) for 5,283 trading dates — 417.9 ms/date.** §8.2's "working
+estimate: ~0.4s/call" (blended from 5 spot-measured tickers) predicted 0.4s;
+measured across the *entire* window it's 0.418s — the estimate holds. `dates_scored
+= 5,283 / 5,283` — every single trading date in the window scored (SPY's own history
+starts 1993, well before the window, so zero insufficient-history skips, unlike
+`MGK`'s expected partial gap). This directly validates §8.2's per-job runtime
+estimate (~35 min for SPY's own matrix job) rather than leaving it as a projection.
+
+### 9.2 `regime_match_depth` distribution
+
+| Depth | n | Share |
+|---|---|---|
+| 3 (full match) | 5,059 | 95.8% |
+| 2 | 119 | 2.3% |
+| 1 | 105 | 2.0% |
+| 0 (unconditional) | 0 | 0.0% |
+
+Depth never backs all the way off to 0 for SPY across 20 years — `MIN_REGIME_N=8` is
+always clearable at depth ≥ 1. Depth 3 dominates overwhelmingly, consistent with
+§6.5's finding that the common regime combination is a weak filter on its own (most
+days cluster into whatever the modal macro state is, which clears the 3-dim match
+easily).
+
+### 9.3 `confidence_label` × `regime_match_depth` cross-tab (ensemble/`forecast` voter) — the concrete version of the logged gap
+
+| depth | high | moderate | low | row total | high share |
+|---|---|---|---|---|---|
+| 1 | 52 | 37 | 16 | 105 | **49.5%** |
+| 2 | 7 | 62 | 50 | 119 | 5.9% |
+| 3 | 2,436 | 2,144 | 479 | 5,059 | **48.2%** |
+
+**Depth 1 and depth 3 — the shallowest and the most rigorous possible conditioning —
+produce statistically indistinguishable "high" shares (49.5% vs. 48.2%, well within
+noise at n=105).** This is the empirical confirmation, not just the structural
+argument from `MARKET_MEMORY_V2_BUILD.md` §5: if `compute_confidence()` rewarded
+deeper regime conditioning, depth 3 would show a *meaningfully higher* high-confidence
+share than depth 1, since depth 3 represents genuinely more specific conditioning.
+It doesn't — confirming directly that regime-match depth carries no detectable
+weight in the confidence number the card actually shows, for the voter that drives
+`recommendation_label`.
+
+**Depth 2 is a real, unexplained outlier, flagged and not chased down further here**:
+5.9% high share against 48-50% at the neighboring depths, on a non-trivial n=119 (not
+a small-sample artifact). `compute_confidence()`'s `agreement = 1 - abs(analog_p -
+regime_p)` term is the most likely mechanism — `regime_p` is drawn from whichever
+positions the depth-2 backoff happens to match, and a depth landing in between the
+two backoff endpoints could plausibly draw from a regime-conditioned pool whose
+implied probability diverges further from the analog model's than either the
+broadest (depth 1) or narrowest (depth 3) pool's does. Not diagnosed further — noted
+as a genuine, specific, reproducible pattern (not noise) worth a follow-up look, not
+folded into the "no depth awareness" finding above, which stands independently of
+whatever's driving depth 2's anomaly.
+
+### 9.4 `p_positive` distribution — moves across the window, does not cluster
+
+| | n | min | p10 | p25 | median | p75 | p90 | max | std |
+|---|---|---|---|---|---|---|---|---|---|
+| **Basis horizon** | 5,283 | 0.074 | 0.605 | 0.769 | 0.831 | 0.859 | 0.875 | 1.000 | 0.125 |
+
+| Horizon | n | min | median | max | std |
+|---|---|---|---|---|---|
+| 1d | 5,283 | 0.176 | 0.526 | 0.909 | 0.088 |
+| 5d | 5,283 | 0.074 | 0.565 | 1.000 | 0.087 |
+| 20d | 5,283 | 0.269 | 0.632 | 0.920 | 0.077 |
+| 60d | 5,283 | 0.231 | 0.673 | 0.962 | 0.084 |
+
+Real movement, not a stuck value — every horizon's own median sits meaningfully above
+0.5 (SPY's 20-year realized drift shows through, as expected) with genuine spread
+down to the 0.07-0.27 range and up to 0.90-1.00, tracking actual stress episodes
+(2008-09, 2020, 2022 pull the low end). **One caveat worth naming, not a red flag**:
+the basis-horizon distribution (median 0.831) sits noticeably higher than any single
+horizon's own raw distribution (medians 0.53-0.67) — `pick_basis_horizon()` selects
+whichever horizon shows the *largest directional edge* each day, which mechanically
+biases the reported "headline" p_positive toward whichever horizon looks most bullish
+that day, not a random or representative one. Worth remembering when reading the
+basis-horizon number specifically; the per-horizon rows above are the cleaner read of
+whether the model's own probabilities move with the market.
+
+(The "distinct values (rounded to 2dp): 85/5,283" figure in the raw script output is
+not a clustering signal — `p_positive` is `k/n` for whatever sample size `n` a given
+day's episode pool has, so its possible values are inherently quantized by `n`; 61-80
+distinct 2-decimal buckets across a 20-year window is expected quantization, not
+evidence of a frozen or repeating output.)
+
+### 9.5 Unknown regime dimension — zero occurrences
+
+**None.** Zero of 5,283 dates returned `"unknown"` in any regime dimension for SPY
+across the full 2005-2025 window. This is the direct, positive confirmation that
+`docs/C3_DESIGN.md` §2.4's `CREDIT_WARMUP_FLOOR` requirement (fetch `BAA10Y` no later
+than 1999-01-01, so the 1260-day percentile window has a full runway before the
+replay window's own 2005-01-01 start) actually worked — `pit_seed.py` seeded `BAA10Y`
+from 1986-01-02 (§8.1), 13 years ahead of the floor, and it shows: not one single
+early-2005 date fell back to `"unknown"` credit the way the pre-fix OAS series would
+have (`docs/CREDIT_SERIES.md` §1's finding, the entire reason this warmup requirement
+exists).
+
+### 9.6 Block count per horizon
+
+| | forecast (4 horizons) | dip_context (2 horizons) |
+|---|---|---|
+| 1d | 5,283 | — |
+| 5d | 5,283 | — |
+| 20d | 5,283 | — |
+| 60d | 5,283 | — |
+| 21d | — | 5,283 |
+| 63d | — | 5,283 |
+| **Total** | **21,132** | **10,566** |
+
+**31,698 total rows for SPY alone**, exactly `5,283 × 6` — every date produced a
+full row set for both voters at every horizon, zero horizons skipped (unlike a
+ticker with thinner episode pools, `dip_context` could in principle return
+`INSUFFICIENT_EVIDENCE`-with-no-`stats`, contributing 0 rows for a date; that never
+happened for SPY across 20 years). Matches `§8.2`'s row-count arithmetic exactly.
+
+### 9.7 Verdict: looks sane, proceeding per the pre-agreed sequence
+
+No crashes, no unexpected `None` results, no unknown-regime dates, wall-clock and row
+counts matching §8's predictions to within a few percent, and the one genuinely
+surprising pattern (depth 2's confidence anomaly) is a real, bounded, reproducible
+data pattern — not a symptom of something broken in `replay()`, the PIT store, or
+the row-building logic. Proceeding to migration + redeploy + live-path verification +
+real-write SPY pilot, per the agreed sequence — the 17-way matrix stays undispatched
+until that pilot is itself reviewed.

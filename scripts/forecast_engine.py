@@ -81,6 +81,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import research_engine as re_engine  # noqa: E402  (reuse fetch/rsi/HY-OAS)
 import rotation_engine as rot_engine  # noqa: E402  (Stage 2a: leadership context)
 import agreement_engine as agr_engine  # noqa: E402  (robustness_final module D)
+from data_context import LiveDataContext  # noqa: E402  (Phase C1)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -622,21 +623,6 @@ def mm_journal(op, payload):
         return None
 
 
-def fetch_episode_library(ticker, dry_run):
-    """Read back this ticker's annotated episodes (cause/what_ended_it)
-    from Supabase so episodes.find_analogs() can merge them instead of
-    treating every match as unresearched. Requires mm-journal's
-    `list_episodes` op (drafted alongside this change — see the handoff
-    notes; mm-journal itself is pasted into the Supabase dashboard, not
-    committed here, so this fails soft to "no library" until that op is
-    deployed, exactly like every other mm_journal() call in this file when
-    APP_PASSPHRASE is unset)."""
-    if dry_run:
-        return None
-    resp = mm_journal("list_episodes", {"asset": ticker})
-    return (resp or {}).get("episodes")
-
-
 def deterministic_seed(*parts) -> int:
     """A reproducible RNG seed from arbitrary string/value parts (e.g.
     ticker, trading_date, model_version) -- NOT Python's builtin hash(),
@@ -655,7 +641,7 @@ def deterministic_seed(*parts) -> int:
 
 
 def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
-                              universe_prices, analog_map, dry_run,
+                              universe_prices, analog_map, ctx,
                               mc_seed=None):
     """BUILD.md's tear-sheet engines, run once per ticker off one shared
     OHLCV fetch and folded into evidence_json (see run_one below) rather
@@ -701,7 +687,13 @@ def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
         for sym in benchmarks.values():
             if sym not in bench_prices:
                 try:
-                    bench_prices[sym] = re_engine.fetch_history(sym)
+                    # C1: routed through ctx.close(), not a direct
+                    # re_engine.fetch_history() call -- this on-demand
+                    # benchmark fetch was the one call site that could
+                    # silently bypass an injected DataContext during
+                    # replay (C2) and hit live data, corrupting every
+                    # p_beat_benchmark figure without raising.
+                    bench_prices[sym] = ctx.close(sym)
                 except Exception as e:
                     print(f"[warn] benchmark {sym} unavailable for {ticker}: {e}")
         bench_prices[ticker] = ohlcv["close"]
@@ -711,7 +703,7 @@ def compute_tearsheet_extras(ticker, ohlcv, spy_close_run, vix, oas,
     except Exception as e:
         print(f"[warn] relative_strength failed for {ticker}: {e}")
     try:
-        library = fetch_episode_library(ticker, dry_run)
+        library = ctx.episodes(ticker)
         ep = eng_episodes.find_analogs(ohlcv, library)
         # Pre-write the handoff prompt here (Python knows which dates need
         # research), rather than asking the frontend to re-derive the same
@@ -793,8 +785,8 @@ def persist_dip_context_forecast(ticker, dc_extras, quote_snapshot_id,
 
 
 def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
-            manual_price, market_status, dry_run, rotation_ctx=None, source=None,
-            analog_map=None):
+            manual_price, market_status, dry_run, ctx, rotation_ctx=None,
+            source=None, analog_map=None):
     ticker = asset["ticker"]
     close = universe_prices.get(ticker)
     if close is None or len(close) < 260:
@@ -896,13 +888,13 @@ def run_one(asset, universe_prices, spy_close, spy_trend_df, vix, oas,
     committee_ballots = []
     ohlcv = None
     try:
-        ohlcv = re_engine.fetch_ohlcv(ticker)
+        ohlcv = ctx.ohlcv(ticker)
         if intraday_proxy:
             ohlcv = append_manual_price_ohlcv(ohlcv, manual_price)
         mc_seed = deterministic_seed(ticker, trading_date, MODEL_VERSION)
         tearsheet_extras, committee_ballots = compute_tearsheet_extras(
             ticker, ohlcv, spy_close_run, vix, oas, universe_prices,
-            analog_map or {}, dry_run, mc_seed=mc_seed)
+            analog_map or {}, ctx, mc_seed=mc_seed)
     except Exception as e:
         print(f"[warn] tear-sheet OHLCV fetch failed for {ticker}: {e}")
 
@@ -1280,6 +1272,14 @@ def main():
                           "for a single --ticker run with no explicit tag.")
     args = ap.parse_args()
 
+    # C1: the one seam every ohlcv/benchmark/episode fetch inside run_one()/
+    # compute_tearsheet_extras() goes through, instead of calling
+    # re_engine/mm_journal directly. spy_close/vix/oas/universe_prices below
+    # were already injected via plain parameters before this change (main()
+    # fetches them upfront, run_one() never called the network for those) --
+    # this closes the remaining gaps. See scripts/data_context.py.
+    ctx = LiveDataContext(mm_journal_fn=mm_journal, dry_run=args.dry_run)
+
     universe = load_universe()
     try:
         spy_close = re_engine.fetch_history("SPY")
@@ -1318,8 +1318,8 @@ def main():
         market_status = "closed" if not on_demand else args.market_status
         result = run_one(asset, universe_prices, spy_close, spy_trend_df,
                           vix, oas, args.price if on_demand else None,
-                          market_status, args.dry_run, rotation_ctx, source=source,
-                          analog_map=analog_map)
+                          market_status, args.dry_run, ctx, rotation_ctx,
+                          source=source, analog_map=analog_map)
         if on_demand:
             if not result:
                 # A silent no-op run shows green in Actions and leaves the

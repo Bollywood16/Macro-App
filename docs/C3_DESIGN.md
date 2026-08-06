@@ -1041,3 +1041,94 @@ the normal counter reaching threshold. `data/pending_forecast_writes.jsonl` is n
 empty (removed). Original payloads preserved byte-for-byte in the dead-letter
 record — nothing about the 8 SMH forecasts themselves was deleted, only their
 retry-eligibility.
+
+---
+
+## 13. C4 backfill run — 16-way tried, corrected to 2 workers, checkpointed and stopped
+
+Not the GH Actions matrix itself — `gh workflow run` returns `403: Resource not
+accessible by integration` even with the workflow pushed and visible on the remote
+(`gh workflow list` confirms it exists); this token has no `actions:write`. Run
+directly in this environment instead, against the same `forecasts_replay` table via
+the same passphrase.
+
+**First attempt (16 processes, one per remaining ticker, 2 CPU cores): killed.**
+8x oversubscription measured directly, not assumed — after ~15-20 min wall-clock,
+each ticker had covered only ~150-250 of its 5,000+ dates (`ps` confirmed all 16
+alive and CPU-sharing, ~7-8% each). Per-ticker partial progress preserved in
+`forecasts_replay` (nothing lost, no duplicate risk yet — `--resume` hadn't run).
+
+**Also discovered and fixed while stopped:** the entire session had never been
+pushed to `origin/main` (13 local-only commits). Pushing surfaced independent
+automated commits on the remote, including one (`c6fd046`, `rotation-radar-bot`,
+2026-08-05T20:39:39Z) that had already cleared the same 8 stale `SMH` queue entries
+§12 dead-lettered — verified directly (not assumed) that this was legitimate: two
+later successful `SMH` runs share the same `write_id` (keyed on ticker/trading_date/
+horizon/model_version/voter, not `as_of_ts`) as the stale entries, so the existing
+code correctly recognized them as superseded. No data was lost; §12's dead-letter
+fix remains valid for future occurrences of this pattern, it just wasn't fixing an
+*active* problem for these specific 8. Rebased cleanly (no real conflicts) and
+pushed.
+
+**`--resume` fixed before relying on it for real**: previously re-processed the
+last-written date once (an accepted-at-the-time tradeoff) — since `forecasts_replay`
+has no unique constraint, this would insert duplicate rows, not overwrite. Fixed to
+start from `last_written + 1 day`, letting `_trading_dates()`'s own `>=` filter land
+correctly on the next real trading day (verified directly against `MGK`'s partial
+data: last written Friday 2009-09-04, correctly resumed at Tuesday 2009-09-08 —
+skipping both the weekend and the Labor Day holiday, not just "the next calendar
+day"). Also fixed `--resume --dry-run`, which previously skipped the resume lookup
+entirely (wrongly gated on `not dry_run`, when the lookup is a read).
+
+**Shared `as_of()` cache benefit: measured directly, found negligible.** Expected
+this to meaningfully speed up later tickers in a multi-ticker run (SPY/QQQ/VIX/
+BAA10Y already warm). Benchmarked XLK (first ticker in a fresh process, cold) against
+XLF and XLV (run immediately after in the same process, shared series warm) over a
+300-date sample: 413.8ms/date vs. 426.7ms/date vs. 436.2ms/date — statistically
+indistinguishable, not faster. The disk-read savings only apply to a process's very
+first call ever; steady-state cost is compute-dominated (`regime_series`/`analog_
+positions`/`tech_read`/`dip_context`/`horizon_stats`), which caching doesn't touch.
+**The real reason to run multiple tickers sequentially in one process is matching
+process count to core count (2), not the cache** — `scripts/replay_backfill.py`'s
+module docstring corrected to say this plainly.
+
+**Restarted as 2 workers (matching the 2 cores), 8 tickers each, `--resume`d from
+the killed run's partial progress:**
+
+- Worker 1: `^SOX, GLD, IWM, QQQ, SMH, XLB, XLE, XLF`
+- Worker 2: `MGK, RSP, XLI, XLK, XLP, XLU, XLV, XLY`
+
+Both launched under `nohup ... & disown`, fully detached from the session, logging
+to `worker1.log`/`worker2.log`.
+
+**Projected wall-clock at the measured ~425ms/date, 2-way parallel: ~4.8 hours** —
+over the ~3-hour threshold, used 2 workers anyway per instruction (the cap, not a
+target to force under 3 hours).
+
+**Stopped per instruction, mid-run, after each worker's then-current ticker
+finished** — not left running unattended overnight. A watcher process per worker
+(`stop_after_current.py`) tailed each log for its `"Done: TICKER --"` line (printed
+only after `backfill()` has already returned, i.e. every batch for that ticker was
+already flushed and committed — a safe kill point, nothing in-flight) and sent
+`SIGKILL` to the worker's PID the instant it appeared, before the next ticker's
+loop iteration could start. Verified against the live table, not just the log:
+
+| Ticker | Rows landed | Complete? |
+|---|---|---|
+| `^SOX` | 31,194 (5,283/5,283 dates × 6 rows) | **Yes — full window** |
+| `MGK` | 25,638 (4,273/4,273 scoreable dates × 6 rows) | **Yes — full scoreable window** (4,532 raw trading dates minus ~259 early-history dates below the 260-day warmup floor, matching expectation) |
+| `GLD` | Unchanged at 223/76/34 (from the earlier killed 16-way run) | **Correctly untouched** — worker 1's watcher killed it before `GLD` (next in its list) did any real work; one harmless `"=== [2/8] GLD ..."` header line printed a fraction of a second before the kill landed, but zero rows were written for it |
+
+Checkpoints written to each log listing completed vs. remaining tickers, per
+instruction:
+
+```
+Worker 1 — completed: ['^SOX']. Remaining: ['GLD','IWM','QQQ','SMH','XLB','XLE','XLF']
+Worker 2 — completed: ['MGK']. Remaining: ['RSP','XLI','XLK','XLP','XLU','XLV','XLY']
+```
+
+**Next step (not done here, per instruction the user will drive it):** re-run with
+the same `--tickers` lists (or just the remaining sub-lists) and `--resume` to pick
+up exactly where each worker stopped. 14 of 16 remaining tickers are still fully
+untouched beyond whatever the original killed 16-way attempt gave them (~150-250
+dates each) — this session covered 2 of 16 to completion.

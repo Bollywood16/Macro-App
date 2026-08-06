@@ -53,17 +53,22 @@ Last updated: 2026-08-05
 3. ~~**C3** — point-in-time Parquet store, `as_of()`~~ Done — `scripts/pit_store.py`.
    Git-history extraction was investigated and rejected as a data source (`docs/
    C3_DESIGN.md` §1) — nothing to extract.
-4. **C4** — historical backfill (dedicated GH Actions workflow). Code built,
-   **17-way matrix still NOT dispatched** — `.github/workflows/replay-backfill.yml`,
-   `scripts/replay_backfill.py`, `forecasts_replay` migration + 3 new mm-journal ops.
-   Since built: **migration applied, `mm-journal` redeployed (v9→v10), live write
-   path re-verified post-deploy, dry-run + real-write SPY pilots both run to
-   completion** — `docs/C3_DESIGN.md` §9-10. Real-write measured: 37.2 min / 31,698
-   rows for SPY's full 2005-2025 window (vs. 36.8 min dry-run — ~24s of that is
-   actual write time, confirming §8.2's estimate was conservative). `SPY` is now
-   genuinely backfilled in `forecasts_replay` as a side effect. **The 17-way matrix
-   itself remains undispatched pending explicit go-ahead** — everything above was
-   single-ticker, reviewed at each step.
+4. **C4** — historical backfill (dedicated GH Actions workflow). Code built. **The
+   GH Actions matrix itself cannot be dispatched from this environment** — confirmed
+   `403: Resource not accessible by integration` even with the workflow pushed and
+   visible on the remote; this token has no `actions:write`. Backfill run directly
+   in-environment instead, against the same `forecasts_replay` table.
+   Migration applied, `mm-journal` redeployed (v9→v10), live write path re-verified
+   post-deploy, dry-run + real-write SPY pilots both run to completion —
+   `docs/C3_DESIGN.md` §9-10. A first 16-process (one per remaining ticker)
+   attempt was killed after measuring severe oversubscription on 2 CPU cores;
+   corrected to 2 sequential-multi-ticker workers (matching core count) — §13.
+   **In-progress, checkpointed and stopped for the day per instruction**: `SPY`
+   (§10), `^SOX`, and `MGK` are fully backfilled (confirmed against the live table,
+   not just logs); 14 of 17 tickers remain, most untouched beyond a small partial
+   head start. `--resume` fixed (previously would have duplicated the last written
+   date; now correctly starts from the next trading day after it) and ready to
+   pick up exactly where each worker stopped.
 5. **D** — scoring on the replay ledger
 6. **E / F / G / H** — bottom-tell library, flush + cross-asset + ATH + committee + event mode, output rebuild, handoff
 

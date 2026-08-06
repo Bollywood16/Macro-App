@@ -10,20 +10,49 @@ op (added alongside `supabase/migrations/20260805150000_forecasts_replay_
 table.sql` -- see that migration's docstring for why a separate table/op,
 not more rows in `forecasts`).
 
-NOT the full C4 GitHub Actions workflow by itself -- this is the per-ticker
-worker `.github/workflows/replay-backfill.yml`'s matrix jobs each invoke once.
-Chunking is by ticker (one job per ticker) and, within a ticker, by an
-optional `--start`/`--end` date range so a partial/failed run can be resumed
-without redoing already-written dates (idempotency: see --resume below).
+NOT the full C4 GitHub Actions workflow by itself -- `.github/workflows/
+replay-backfill.yml`'s matrix jobs each invoke this once per ticker. That
+workflow could not actually be dispatched from this environment (GitHub API
+returned 403, the token here has no `actions:write`) -- see `--tickers` below
+for the fallback this repo's own environment used instead.
 
 Resumability: `--resume` queries the highest `trading_date` already written
 for (ticker, voter='forecast') in `forecasts_replay` and starts from the next
-trading date after it, rather than re-running the whole range. Cheap (one
-indexed query) and avoids depending on any external checkpoint file surviving
-across ephemeral GitHub Actions runners.
+trading date AFTER it (not the date itself -- forecasts_replay has no unique
+constraint on (ticker, trading_date, horizon_days, voter), so re-processing
+the last written date would insert a duplicate set of rows for it, not
+overwrite). Cheap (one indexed query) and avoids depending on any external
+checkpoint file surviving across ephemeral GitHub Actions runners.
+
+`--tickers a,b,c` (sequential-in-one-process, added this session): why this
+exists alongside `--ticker`, and why sequential rather than one subprocess
+per ticker. Launching one process per ticker (matching the matrix's own
+per-ticker parallelism) was tried first in this repo's own environment --
+16 processes on 2 CPU cores. Measured result: severe slowdown from
+oversubscription (context-switching/scheduling overhead, not just the naive
+1/8-of-a-core-each division), confirmed by killing it and finding each
+process had covered only ~150-250 of its ~5,000+ dates after ~15-20 minutes
+of wall-clock time -- far worse than 1/16th of a solo run's rate. The
+process-count needs to match the core count, not the ticker count.
+
+`--tickers` was ALSO expected to benefit from `pit_store`'s module-level
+`as_of()` read cache being shared across tickers within one process (every
+ticker's `replay()` call reads the same SPY/QQQ benchmark and VIX/BAA10Y
+macro series) -- **measured directly, this benefit is negligible**: XLK
+(first ticker in a fresh process) averaged 413.8ms/date over a 300-date
+sample; XLF and XLV, run immediately after in the SAME process with
+SPY/QQQ/VIX/BAA10Y already warm, averaged 426.7ms and 436.2ms/date --
+statistically indistinguishable from XLK's cold rate, not faster. The
+shared-disk-read savings only apply to a process's very first call ever;
+once a ticker's OWN price series is warm (after its own first date), the
+steady-state cost is dominated by compute (`regime_series`/`analog_
+positions`/`tech_read`/`dip_context`/`horizon_stats`), which doesn't shrink
+from caching at all. **The real reason `--tickers` exists is matching
+process count to core count, not the cache.**
 
 Run: python3 scripts/replay_backfill.py --ticker SMH --start 2005-01-01
      --end 2025-12-31 [--resume] [--batch-size 500] [--dry-run]
+     python3 scripts/replay_backfill.py --tickers SMH,QQQ,GLD [same flags]
 """
 from __future__ import annotations
 
@@ -218,7 +247,17 @@ def backfill(ticker: str, start: date_type, end: date_type,
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ticker", required=True)
+    group = ap.add_mutually_exclusive_group(required=True)
+    group.add_argument("--ticker", help="Single ticker")
+    group.add_argument("--tickers", help="Comma-separated tickers, processed "
+                        "SEQUENTIALLY IN THIS ONE PROCESS -- not a shortcut "
+                        "for launching one subprocess per ticker. This is what "
+                        "makes pit_store's as_of() read cache (module-level,\n"
+                        "per-process) shared across tickers, and -- the "
+                        "actual reason this exists -- keeps the OS process "
+                        "count matched to available cores instead of "
+                        "oversubscribing them. See the module docstring's "
+                        "'why sequential-in-one-process' note.")
     ap.add_argument("--start", default="2005-01-01")
     ap.add_argument("--end", default="2025-12-31")
     ap.add_argument("--store-root", default=pit.DEFAULT_STORE_ROOT)
@@ -226,13 +265,32 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run", action="store_true",
                      help="Compute and print progress only; skip mm-journal writes")
     ap.add_argument("--resume", action="store_true",
-                     help="Query forecasts_replay for this ticker's latest "
-                          "written trading_date and start from there instead "
-                          "of --start")
+                     help="Per ticker: query forecasts_replay for its latest "
+                          "written trading_date and start from the next "
+                          "trading date after it instead of --start")
     args = ap.parse_args()
 
-    result = backfill(
-        args.ticker, date_type.fromisoformat(args.start),
-        date_type.fromisoformat(args.end), store_root=args.store_root,
-        batch_size=args.batch_size, dry_run=args.dry_run, resume=args.resume)
-    sys.exit(0 if result["dates_scored"] > 0 or result["dates_total"] == 0 else 1)
+    start = date_type.fromisoformat(args.start)
+    end = date_type.fromisoformat(args.end)
+    tickers = ([args.ticker.upper()] if args.ticker else
+               [t.strip().upper() for t in args.tickers.split(",") if t.strip()])
+
+    results = []
+    for i, t in enumerate(tickers):
+        if len(tickers) > 1:
+            print(f"\n=== [{i + 1}/{len(tickers)}] {t} "
+                  f"(as_of() cache carries forward from prior tickers "
+                  f"in this run) ===", flush=True)
+        results.append(backfill(
+            t, start, end, store_root=args.store_root,
+            batch_size=args.batch_size, dry_run=args.dry_run, resume=args.resume))
+
+    if len(tickers) > 1:
+        print("\n=== SUMMARY (this worker) ===")
+        for r in results:
+            print(f"  {r['ticker']:<6} {r['dates_scored']}/{r['dates_total']} "
+                  f"dates scored, {r['rows_written']} rows, "
+                  f"{r['elapsed_seconds'] / 60:.1f} min")
+
+    ok = all(r["dates_scored"] > 0 or r["dates_total"] == 0 for r in results)
+    sys.exit(0 if ok else 1)

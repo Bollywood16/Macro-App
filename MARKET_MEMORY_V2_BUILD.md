@@ -329,6 +329,24 @@ Display permanently:
 - **Per-ticker record**, on the tear sheet itself
 - **`dip_context` label-vs-outcome correlation, tickers where the label actually
   varies only** — see "The confidence-function inversion" below. Not a fix, a test.
+- **No shrinkage floor on raw `p_positive` — logged, not fixed, ahead of the
+  backfill.** SPY's replay `p_positive` hits exactly `1.0000` at 5d on 3 dates
+  (2020-03-18/19/23 — the COVID-crash bottom, `docs/C3_DESIGN.md` §11.3): every
+  matched analog agreed on direction, and the raw formula (`(rets > 0).mean()`) has
+  no regularization, so unanimous small-`n` agreement produces literal certainty.
+  **Do not clamp this before C4's backfill runs** — the replay ledger's job is to
+  record the raw model's actual claims; isotonic/Platt recalibration (already
+  planned above) is what turns "the model said 100%" into a properly shrunk
+  probability, and needs the unclamped extremes to fit against. Clamping first
+  would destroy exactly the information recalibration is supposed to correct.
+- **Live 5d bullish tilt (mean forecast 0.551 vs. 0.417 hit rate, §1.3) — tentatively
+  attributed to the drawdown window, not a structural model tilt.** SPY's 20-year
+  replay 5d mean (0.569) sits close to the live period's own forecast mean (0.551),
+  and per-horizon means climb smoothly with horizon length in a way consistent with
+  SPY's actual realized long-run drift, not a horizon-specific artifact
+  (`docs/C3_DESIGN.md` §11.3). Suggestive, not proven — the live window is 3 weeks,
+  19 correlated tickers, one drawdown; the replay ledger is what actually settles
+  whether this tilt is structural or was that specific stretch.
 
 ### The confidence-function inversion D must settle
 

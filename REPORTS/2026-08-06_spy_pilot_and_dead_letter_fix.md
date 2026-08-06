@@ -2,7 +2,12 @@
 
 Full detail and methodology: `docs/C3_DESIGN.md` §11 (pilot analysis) and §12
 (dead-letter fix). This is the summary reported before dispatching the C4
-17-ticker matrix (still undispatched as of this report).
+17-ticker matrix.
+
+**Correction (2026-08-06):** this report originally compared replay's single-ticker
+5d sharpness against a pooled 19-ticker live figure and concluded the model doesn't
+sharpen with regime diversity. That comparison was apples-to-oranges — corrected
+below, §11.3 of `docs/C3_DESIGN.md` has the full derivation and verification.
 
 ---
 
@@ -42,27 +47,51 @@ Depth 1 disappears entirely after 2010.
 Depth 1 and depth 3 are statistically indistinguishable (49.5% vs 48.2%, n=105
 well within noise) — the empirical proof: `compute_confidence()` carries no
 detectable depth weight. Depth 2 remains a real, unexplained, bounded outlier
-(5.9%, n=119) — not chased down further.
+(5.9%, n=119) — left alone, not chased down further, by agreement.
 
-### `p_positive` per horizon — and the sharpness comparison
+### `p_positive` per horizon — and the corrected sharpness comparison
 
 n=5,283 each, exact, from the persisted rows.
 
-| Horizon | mean | std ("sharpness") | min | max |
+| Horizon | mean | std | min | max |
 |---|---|---|---|---|
 | 1d | 0.527 | 0.0877 | 0.177 | 0.909 |
-| 5d | 0.569 | 0.0872 | 0.074 | 1.000 |
+| 5d | 0.569 | 0.0872 | 0.074 | **1.000** |
 | 20d | 0.625 | 0.0768 | 0.269 | 0.920 |
 | 60d | 0.660 | 0.0841 | 0.231 | 0.962 |
 
-**Live 5d sharpness (0.0946) vs. replay's 5d sharpness (0.0872): nearly identical,
-replay marginally tighter.** If the model expressed real regime-conditional
-sharpness — tighter in calm periods, wider under stress — 20 years pooled across
-every regime SPY has lived through would show visibly *more* spread than one live
-window. It doesn't. This changes what Phase D can conclude: it can't assume the
-model gets sharper when regime-conditioned — this pilot's own numbers say that's
-not happening in `p_positive`. Same underlying gap as the depth-confidence finding
-above, seen from a different angle.
+**Corrected comparison.** `MARKET_MEMORY_V2_BUILD.md` §1.3's cited live 5d sharpness
+(0.0946) is `stddev(p_positive)` pooled across **19 correlated tickers over ~3
+weeks** — most of that spread is the fixed cross-sectional ranking (semis/tech
+forecast consistently higher than financials/utilities), not time-series movement.
+Verified directly: decomposing that same pooled sample (n=320) gives **57.6%
+cross-sectional variance, 42.4% time-series** — and SPY's own live 5d time-series
+std, queried directly, is **0.0513** (n=18), not 0.0946.
+
+**Replay SPY (0.0872) vs. live SPY's own time-series std (0.0513): replay shows
+~1.7x MORE time-series variation, not less.** The model *does* respond more across
+20 years of genuinely different regimes than across a recent 3-week window. Phase D
+should not carry forward "the model doesn't get sharper when regime-conditioned" —
+that reading came from an invalid comparison and doesn't survive the like-for-like
+one. The depth-vs-confidence finding above is unaffected (same-ticker,
+depth-vs-depth throughout) but shouldn't be read as part of a broader
+"model-is-regime-insensitive" story — the sharpness evidence now points the
+other way.
+
+**Logged, not fixed — no shrinkage floor on `p_positive`.** The 5d max of exactly
+`1.0000` traces to three real dates: **2020-03-18, 2020-03-19, 2020-03-23** — the
+COVID-crash bottom — where every matched analog (n=25-26) agreed on direction. The
+raw formula has no regularization, so unanimous small-`n` agreement produces literal
+certainty. **Do not clamp ahead of the backfill** — the replay ledger needs to record
+the model's raw, unclamped claims for isotonic/Platt recalibration (already planned
+for Phase D) to be fit against correctly.
+
+**Logged, not fixed — the live bullish tilt looks like the drawdown, not the
+model.** Live 5d mean forecast was 0.551 against a 0.417 hit rate (§1.3). Replay's
+own 20-year 5d mean (0.569) sits close to that live forecast mean, and per-horizon
+means climb smoothly and plausibly with horizon length. Suggestive that the
+apparent tilt was that specific 3-week correlated drawdown, not a structural model
+bias — not proven; the replay ledger is what actually settles it.
 
 ### Unknown regime dates and block counts
 
@@ -86,5 +115,5 @@ migrated with their real observed failure reason —
 
 ---
 
-**Matrix remains undispatched**, pending review of the depth/confidence/sharpness
-findings above.
+**Matrix dispatched following this review** — see the C4 dispatch report for
+per-ticker results.

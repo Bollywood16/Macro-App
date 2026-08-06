@@ -887,15 +887,51 @@ about as often as each other. (Depth 2's own anomaly — 5.9% high, a real, boun
 unexplained pattern on non-trivial n=119 — stands separately, per §9.3; not chased
 down further here either.)
 
-### 11.3 `p_positive` — full distribution, and the direct comparison to live sharpness
+### 11.3 `p_positive` — full distribution, and the corrected comparison to live sharpness
 
-Per-horizon, queried from the persisted rows (n=5,283 each, exact):
+**Correction to this section as first published:** the original version of this
+section compared replay's single-ticker 5d std (0.0872) directly against
+`MARKET_MEMORY_V2_BUILD.md` §1.3's pooled 5d figure (0.0946, cited there as "true
+sharpness") and concluded the model doesn't get sharper across 20 years of regimes
+than across 3 weeks live. **That comparison was apples-to-oranges and the conclusion
+was backwards.** §1.3's 0.0946 is `stddev(p_positive)` pooled across **19 correlated
+tickers** over **~3 weeks** (§1.3's own words: "Three weeks, a drawdown, 19
+correlated tickers... the fixed ranking puts semis and mega-cap tech highest") — most
+of that spread is the fixed cross-sectional ranking (some tickers' forecasts run
+consistently higher than others', because the model itself weighs them differently,
+not because any one ticker's own forecast moved), not time-series variation within a
+single ticker. Replay's 0.0872 is pure time-series variation for **one ticker, 5,283
+dates**. These were never measuring the same thing.
 
-| Horizon | mean | std (= "sharpness," `MARKET_MEMORY_V2_BUILD.md` §1.3's corrected
-  definition) | min | max |
+**Verified directly** (queried live, not re-derived from memory) — SPY's own 5d
+`stddev(p_positive)` restricted to the same live outcome-scored population §1.3's
+number came from: **0.0513** (n=18). Decomposing §1.3's full pooled sample
+(19 tickers, n=320, current count — more outcomes have resolved since §1.3's original
+n=300) into within-ticker and between-ticker variance confirms the mechanism
+precisely: **57.6% of the pooled variance is cross-sectional (between-ticker),
+42.4% is time-series (within-ticker)** — matching the "~55% cross-sectional"
+estimate this correction was built on almost exactly.
+
+**Corrected comparison: replay SPY (0.0872) vs. live SPY's own time-series std
+(0.0513) — replay shows ~1.7x MORE time-series variation, not less.** The model
+*does* respond more across 20 years of genuinely different regimes than it does
+across a recent 3-week window. **Phase D should not carry forward "the model doesn't
+get sharper when regime-conditioned" as a finding — that conclusion came from
+comparing a time-series statistic to a pooled cross-sectional-plus-time-series one,
+and doesn't survive the like-for-like comparison.** §11.2's depth-vs-confidence
+finding (confidence carries no weight from `regime_match_depth`) is unaffected by
+this correction — that comparison was already same-ticker, same-population,
+depth-vs-depth, no cross-sectional contamination — but it should not be read as part
+of a broader "the model is insensitive to regime" story; the sharpness evidence now
+points the other way.
+
+Per-horizon `p_positive`, queried from the persisted rows (n=5,283 each, exact) —
+kept for reference, the raw numbers didn't change, only their live comparison did:
+
+| Horizon | mean | std | min | max |
 |---|---|---|---|---|
 | 1d | 0.5265 | 0.0877 | 0.1765 | 0.9091 |
-| 5d | 0.5694 | 0.0872 | 0.0741 | 1.0000 |
+| 5d | 0.5694 | 0.0872 | 0.0741 | **1.0000** |
 | 20d | 0.6248 | 0.0768 | 0.2692 | 0.9200 |
 | 60d | 0.6601 | 0.0841 | 0.2308 | 0.9615 |
 
@@ -903,26 +939,35 @@ Basis-horizon-only (the figure actually shown on the card, per §9.4's caveat ab
 `pick_basis_horizon()`'s edge-maximizing selection bias): n=5,283, mean/median≈0.83,
 std=0.1248, range 0.074–1.000.
 
-**Direct comparison to the live figure named (5d sharpness 0.095, `MARKET_MEMORY_V2_
-BUILD.md` §1.3's `0.0946` at 5d):** replay's 5d sharpness is **0.0872 — nearly
-identical, marginally tighter.** This is a real, specific, quantified answer to what
-that comparison was checking for: **20 years of replay across every regime SPY has
-been through (2008 GFC, 2011, 2015-16, 2020 COVID, 2022 hike cycle, multiple bull
-runs) produces essentially the same dispersion in the model's own stated probability
-as a recent few-week live window did.** If the model were genuinely sharper in some
-regimes than others — expressing tighter, more confident probabilities in calm
-periods and wider, more uncertain ones in stress — the 20-year std would be
-*visibly* larger than the live single-window figure, since it would be pooling many
-different sharpness levels together. It isn't. **The model is about as sharp across
-two decades of regime diversity as it is across three weeks — which means Phase D
-cannot treat "the model gets sharper/more confident when regime-conditioned" as
-something already demonstrated; this pilot's own numbers say it isn't happening, at
-least not in a way that shows up in `p_positive`'s spread.** This sits alongside
-§11.2's finding, not separately from it — a confidence function insensitive to depth
-(§11.2) and a probability output whose spread doesn't visibly respond to two decades
-of regime variety (this section) are two versions of the same underlying gap: the
-model's outputs don't move as much with the regime as the regime machinery implies
-they should.
+**Logged, not fixed — no shrinkage floor on `p_positive`.** The 5d max of exactly
+`1.0000` isn't a rounding artifact: queried the three dates directly —
+**2020-03-18, 2020-03-19, 2020-03-23 (n=25-26 each)** — the COVID-crash bottom, to
+the day. Every single matched analog/regime episode agreed on direction at those
+three dates, and `p_positive = (rets > 0).mean()` is a raw empirical fraction with no
+regularization, so unanimous agreement among a small-ish `n` produces exactly `1.0`
+(or `0.0`) rather than something short of certainty. **Do not clamp this ahead of the
+backfill.** The replay ledger's job is to measure what the raw model actually says;
+recalibration (isotonic/Platt regression on the ledger, already Phase D's own plan)
+is exactly the mechanism that turns "the model claimed 100%" into a properly
+shrunk, calibrated probability — and it needs the raw, unclamped extremes to do that
+correctly. Clamping before the backfill would destroy the very information
+(how confident does the raw model get, and how often is it deserved) recalibration
+is supposed to be fit against.
+
+**Logged, not fixed — per-horizon means track SPY's own long-run base rates.**
+1d/5d/20d/60d means (0.527/0.569/0.625/0.660) climb smoothly with horizon length,
+consistent with SPY's realized historical drift compounding over longer windows, not
+a horizon-specific quirk. Worth recording against §1.2's "7/29" read and the live
+5d hit-rate figure (0.417, §1.3): **this pilot's own numbers suggest the live
+window's apparent bullish tilt (mean forecast 0.551 vs. 0.417 realized) was that
+specific 3-week drawdown period, not a structural bias baked into the model** — the
+20-year replay's own 5d mean (0.569) sits close to the live period's forecast mean
+(0.551), both well above what a short, correlated drawdown sample's hit rate would
+suggest, and 20 years of data shows no sign of a runaway bullish drift beyond what
+SPY's own history actually contains.
+
+**Depth 2's anomaly (§11.2, §9.3): left alone**, per agreement — bounded, n=119, not
+worth chasing before the backfill.
 
 ### 11.4 Unknown regime dates and block counts — restated for completeness
 

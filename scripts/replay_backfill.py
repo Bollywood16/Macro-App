@@ -31,7 +31,7 @@ import argparse
 import os
 import sys
 import time
-from datetime import date as date_type, datetime, timezone
+from datetime import date as date_type, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -153,23 +153,32 @@ def backfill(ticker: str, start: date_type, end: date_type,
              resume: bool = False):
     ticker = ticker.upper()
 
-    if resume and not dry_run:
+    if resume:
+        # A read (query, not a write) -- runs even under --dry-run so
+        # --resume --dry-run previews what a real run would pick up without
+        # requiring the caller to also skip the one thing that makes
+        # --resume meaningful to test. Still needs APP_PASSPHRASE (every
+        # mm_journal call does); no-ops gracefully via the same None-safe
+        # handling below if it's unset.
         resp = fe.mm_journal("latest_forecast_replay_date",
                               {"ticker": ticker, "voter": "forecast"})
         latest_str = (resp or {}).get("trading_date")
         if latest_str:
             resumed_start = date_type.fromisoformat(latest_str)
             if resumed_start >= start:
-                # Re-does the last written date once (no DB-level
-                # upsert-by-date constraint exists to make that free) --
-                # accepted duplication in exchange for never risking a gap.
-                # A stronger fix (a unique constraint on (ticker,
-                # trading_date, horizon_days, voter) + upsert) is a
-                # reasonable follow-up, not built here.
+                # forecasts_replay has no unique constraint on (ticker,
+                # trading_date, horizon_days, voter), so re-processing the
+                # last written date would insert a second, duplicate set of
+                # rows for it, not overwrite -- excluded via the strict `>`
+                # below (_trading_dates' own filter is `start <= d`) rather
+                # than accepting that duplication as a known tradeoff.
+                # Everything strictly after resumed_start is untouched and
+                # gets processed normally; nothing before it is re-read.
+                exclusive_start = resumed_start + timedelta(days=1)
                 print(f"[resume] last written trading_date={resumed_start}, "
-                      f"resuming from there (requested start was {start}; "
-                      "that date will be re-written once, not skipped)")
-                start = resumed_start
+                      f"resuming from the next trading date after it "
+                      f"(requested start was {start})")
+                start = exclusive_start
 
     dates = _trading_dates(ticker, start, end, store_root)
     print(f"Backfilling {ticker}: {len(dates)} trading dates, "

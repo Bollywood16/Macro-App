@@ -26,6 +26,7 @@ Last updated: 2026-08-05
 | `a6aa3e3` | **Fix 5 (B4+B5)** — fail-loud persistence (write-ahead staging to `data/pending_forecast_writes.jsonl`, raises `PersistenceError`) + gap detector (batch exits non-zero if `ensemble_rows_created < tickers × horizons`) |
 | `3bce17f` | **Phase C3** — `scripts/pit_store.py` (`as_of()`, `PointInTimeDataContext`), `scripts/pit_seed.py`. See `docs/C3_DESIGN.md` §5. |
 | (this session) | **Phase C2** — `scripts/replay.py`'s `replay(ticker, date)`. Acceptance test passing against real seeded data — see `docs/C3_DESIGN.md` §7. |
+| (this session) | **Fix 5 dead-letter** — `MAX_WRITE_ATTEMPTS` (5) + `data/dead_letter_forecast_writes.jsonl`: an entry that fails identically forever (payload predates a now-required field) stops retrying forever and gets moved out with its failure reason, logged loudly. The 8 pre-existing stale `SMH` entries (staged before `regime_model_version` existed) migrated to the dead-letter file. See `docs/C3_DESIGN.md` §12. |
 
 ### Permanent regression tests (all passing)
 
@@ -39,6 +40,11 @@ Last updated: 2026-08-05
 - `scripts/tests/test_replay_acceptance.py` — C2's own acceptance test
   (`replay('SPY', <2019 date>)` byte-identical, full store vs. a physically
   truncated copy). Skips (not fails) if `data/pit/` isn't seeded.
+- `scripts/tests/test_dead_letter_queue.py` — Fix 5's dead-letter mechanism (this
+  session): exhausted entries move to `data/dead_letter_forecast_writes.jsonl` on
+  exactly the `MAX_WRITE_ATTEMPTS`th failure, with `write_id`/`attempts`/
+  `last_error`/payload preserved; recovery before exhaustion leaves no trace;
+  dead-lettering is append-only across multiple entries.
 
 ### Open — next work
 

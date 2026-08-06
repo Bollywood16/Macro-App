@@ -641,9 +641,20 @@ def build_invalidation_risks(ticker, regimes, distribution_shift):
 # ------------------------------------------------------------- mm-journal
 
 
+# Fix 5 dead-letter (this session): mm_journal() itself stays fail-soft and
+# keeps returning None on failure (many callers depend on that sentinel) --
+# but a None alone doesn't say WHY, and persist_or_raise()/flush_pending_
+# writes() need the reason to write a useful dead-letter record. Set right
+# before every failing return, read immediately after by the caller; no
+# concurrency in this script (plain sequential loop), so the single shared
+# slot is safe.
+_last_mm_journal_error = {"detail": None}
+
+
 def mm_journal(op, payload):
     passphrase = os.environ.get("APP_PASSPHRASE")
     if not passphrase:
+        _last_mm_journal_error["detail"] = "APP_PASSPHRASE not set"
         print(f"[warn] APP_PASSPHRASE not set — skipping persistence for {op}")
         return None
     body = json.dumps({"op": op, "payload": payload}).encode()
@@ -657,9 +668,11 @@ def mm_journal(op, payload):
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")
         print(f"[warn] mm-journal {op} failed: HTTP {e.code} {detail}")
+        _last_mm_journal_error["detail"] = f"HTTP {e.code} {detail}"
         return None
     except Exception as e:
         print(f"[warn] mm-journal {op} failed: {e}")
+        _last_mm_journal_error["detail"] = str(e)
         return None
 
 
@@ -676,6 +689,20 @@ def mm_journal(op, payload):
 # night with nothing to report.
 
 PENDING_WRITES_PATH = os.path.join(ROOT, "data", "pending_forecast_writes.jsonl")
+# Dead-letter (added this session -- the poison-queue fix): a staged write
+# whose failure is permanent (e.g. its payload predates a field the API now
+# requires) used to retry and fail identically forever -- every future
+# required-field change would only ever add more of these, and the queue
+# grows monotonically with no way for an entry to leave it except by
+# eventually succeeding. MAX_WRITE_ATTEMPTS bounds how many times any one
+# entry gets retried before it's moved here instead of back into the
+# pending file. 5 is deliberately not tiny (a genuinely transient outage --
+# the case this whole mechanism exists for -- should get several real
+# chances across several runs) and not huge (an entry that's failed 5
+# times, spanning 5 separate invocations of this script, is past the point
+# where "try again next run" is a credible theory).
+DEAD_LETTER_PATH = os.path.join(ROOT, "data", "dead_letter_forecast_writes.jsonl")
+MAX_WRITE_ATTEMPTS = 5
 RESP_KEY_BY_OP = {"create_forecast": "forecast", "create_quote_snapshot": "quote_snapshot"}
 
 
@@ -683,7 +710,10 @@ class PersistenceError(Exception):
     """A core forecast/quote-snapshot write failed to persist."""
 
 
-_run_write_outcomes = {}  # write_id -> True once confirmed persisted, this process only
+_run_write_outcomes = {}   # write_id -> True once confirmed persisted, this process only
+_run_write_failures = {}   # write_id -> failure reason, for every write_id attempted (and
+                            # failed) this process -- via persist_or_raise() or
+                            # flush_pending_writes(), either counts as an attempt
 
 
 def _write_id_for(op, payload):
@@ -709,13 +739,17 @@ def stage_pending_write(op, payload):
     even a hard crash mid-request (not just a caught exception) leaves a
     retriable record. Survives across GitHub Actions runs the same way
     every other data/*.json output in this repo does -- the workflow
-    commits it back if it changed (see forecast-engine.yml)."""
+    commits it back if it changed (see forecast-engine.yml). `attempts`
+    starts at 0 -- incremented once per failed attempt by
+    rewrite_pending_writes(), the one place that sees every attempt across
+    both persist_or_raise() and flush_pending_writes()."""
     write_id = _write_id_for(op, payload)
     os.makedirs(os.path.dirname(PENDING_WRITES_PATH), exist_ok=True)
     with open(PENDING_WRITES_PATH, "a") as f:
         f.write(json.dumps({
             "write_id": write_id, "op": op, "payload": payload,
             "queued_at": datetime.now(timezone.utc).isoformat(),
+            "attempts": 0,
         }) + "\n")
     return write_id
 
@@ -730,6 +764,7 @@ def persist_or_raise(op, payload):
     resp = mm_journal(op, payload)
     resp_key = RESP_KEY_BY_OP[op]
     if resp is None or resp_key not in resp:
+        _run_write_failures[write_id] = _last_mm_journal_error["detail"] or "mm_journal returned no data"
         raise PersistenceError(
             f"{op} failed to persist (write_id={write_id}, "
             f"ticker={payload.get('ticker')}, "
@@ -760,6 +795,9 @@ def flush_pending_writes():
         if resp is not None and resp_key and resp_key in resp:
             _run_write_outcomes[entry["write_id"]] = True
             recovered += 1
+        else:
+            _run_write_failures[entry["write_id"]] = (
+                _last_mm_journal_error["detail"] or "mm_journal returned no data")
     print(f"[info] {recovered}/{len(lines)} staged write(s) recovered.")
 
 
@@ -767,26 +805,67 @@ def rewrite_pending_writes():
     """Collapse the staging file down to only writes that never succeeded
     across this whole process (the flush-at-start retry AND this run's own
     attempts). Called once, at the very end of main(), from a finally
-    block so it runs even when the run is exiting non-zero."""
+    block so it runs even when the run is exiting non-zero.
+
+    Also the one place `attempts` gets incremented (every write_id in
+    `_run_write_failures` was attempted -- via persist_or_raise() or
+    flush_pending_writes(), doesn't matter which -- and failed this run) and
+    the one place MAX_WRITE_ATTEMPTS gets enforced: an entry that reaches
+    the threshold is moved to DEAD_LETTER_PATH with its failure reason
+    instead of being written back to the pending file, so a permanently
+    broken entry (e.g. staged before a field the API now requires existed)
+    stops being retried and reported as a fresh failure on every single
+    future run forever."""
     if not os.path.exists(PENDING_WRITES_PATH):
         return
     with open(PENDING_WRITES_PATH) as f:
         lines = [ln for ln in f if ln.strip()]
-    still_pending, seen = [], set()
+    still_pending, dead_lettered, seen = [], [], set()
     for ln in lines:
         entry = json.loads(ln)
         wid = entry["write_id"]
         if wid in seen:
             continue  # de-dup repeated staging of the same logical write
         seen.add(wid)
-        if not _run_write_outcomes.get(wid):
-            still_pending.append(ln if ln.endswith("\n") else ln + "\n")
+        if _run_write_outcomes.get(wid):
+            continue  # succeeded this run -- drop it, nothing to carry forward
+        if wid in _run_write_failures:
+            entry["attempts"] = entry.get("attempts", 0) + 1
+            entry["last_error"] = _run_write_failures[wid]
+            entry["last_attempted_at"] = datetime.now(timezone.utc).isoformat()
+        # else: staged but not attempted this run (shouldn't normally
+        # happen -- flush_pending_writes() retries everything pending at
+        # the start of every run) -- carry forward with its existing
+        # attempts count unchanged rather than guessing.
+        if entry.get("attempts", 0) >= MAX_WRITE_ATTEMPTS:
+            entry["dead_lettered_at"] = datetime.now(timezone.utc).isoformat()
+            dead_lettered.append(entry)
+            # Loud on purpose -- this is exactly the failure mode B4/B5
+            # exist to make impossible to miss silently. A dead-lettered
+            # entry is data loss (a forecast that will never be persisted
+            # unless someone intervenes by hand), not a routine retry.
+            print(f"[DEAD-LETTER] {entry['op']} for ticker="
+                  f"{entry['payload'].get('ticker')} "
+                  f"trading_date={entry['payload'].get('trading_date')} "
+                  f"horizon_days={entry['payload'].get('horizon_days')} "
+                  f"exceeded {MAX_WRITE_ATTEMPTS} attempts -- moved to "
+                  f"{DEAD_LETTER_PATH}. Last error: {entry.get('last_error')}")
+        else:
+            still_pending.append(entry)
+
+    if dead_lettered:
+        os.makedirs(os.path.dirname(DEAD_LETTER_PATH), exist_ok=True)
+        with open(DEAD_LETTER_PATH, "a") as f:
+            for entry in dead_lettered:
+                f.write(json.dumps(entry) + "\n")
+
     if still_pending:
         with open(PENDING_WRITES_PATH, "w") as f:
-            f.writelines(still_pending)
+            for entry in still_pending:
+                f.write(json.dumps(entry) + "\n")
         print(f"[warn] {len(still_pending)} forecast write(s) still pending "
               f"after this run -- staged in {PENDING_WRITES_PATH}.")
-    else:
+    elif os.path.exists(PENDING_WRITES_PATH):
         os.remove(PENDING_WRITES_PATH)
 
 

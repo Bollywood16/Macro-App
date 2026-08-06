@@ -826,3 +826,173 @@ and is otherwise a no-op).
 Everything above required live Supabase access (migration + deploy + two write
 runs) — all deliberate, all logged here, none of it the 17-way `replay-backfill.yml`
 matrix itself. That dispatch is still pending explicit go-ahead.
+
+---
+
+## 11. The actual analytical gate — SPY pilot results, in full
+
+§9 covered the pilot's infrastructure result (it ran, matched runtime predictions,
+didn't crash). This section is the data itself — what the 20-year replay actually
+shows for SPY, which is the real question the pilot exists to answer before
+committing to 16 more tickers of the same thing.
+
+### 11.1 `regime_match_depth` by era — checking specifically for a collapse to depth 1
+
+Queried directly from the persisted `forecasts_replay` rows (not re-derived), grouped
+into 2-year eras:
+
+| Era | depth=1 | depth=2 | depth=3 | total | depth<3 share |
+|---|---|---|---|---|---|
+| 2005-2006 | 34 | 0 | 469 | 503 | 6.8% |
+| 2007-2008 | 23 | 12 | 469 | 504 | 6.9% |
+| 2009-2010 | 48 | 45 | 411 | 504 | **18.5%** |
+| 2011-2012 | 0 | 4 | 498 | 502 | 0.8% |
+| 2013-2014 | 0 | 0 | 504 | 504 | 0.0% |
+| 2015-2016 | 0 | 22 | 482 | 504 | 4.4% |
+| 2017-2018 | 0 | 3 | 499 | 502 | 0.6% |
+| 2019-2020 | 0 | 27 | 478 | 505 | 5.3% |
+| 2021-2022 | 0 | 5 | 498 | 503 | 1.0% |
+| 2023-2025 | 0 | 1 | 751 | 752 | 0.1% |
+
+**No sustained collapse to depth 1 anywhere, including 2008-2010.** Depth 1 (the
+specific failure mode asked about — a dimension silently unavailable) appears only in
+three eras (2005-2006, 2007-2008, 2009-2010) and never again after 2010; even in
+2009-2010, the era with the most backoff activity of any 2-year window in the whole
+20-year set, it's 48 of 504 dates (9.5%), not a collapse — depth 3 still holds 81.5%
+of that era. The elevated depth<3 share in 2009-2010 (18.5%, roughly 3x the next-
+highest era) is real and makes sense on its own terms — the GFC-recovery period is
+exactly when VIX/credit/trend regimes were genuinely transitioning fastest, so more
+dates landing in a state that hadn't yet accumulated 8 independent historical matches
+at full depth is the expected behavior of the 3→2→1→0 backoff, not a data outage.
+Nothing here resembles a dimension going dark for a stretch.
+
+### 11.2 `confidence_label` distribution and the depth × confidence cross-tab (ensemble voter) — restated as the direct answer to the depth-awareness question
+
+`high`: 2,495 (47.2%) · `moderate`: 2,243 (42.5%) · `low`: 545 (10.3%).
+
+| depth | high | moderate | low | n | high share |
+|---|---|---|---|---|---|
+| 1 | 52 | 37 | 16 | 105 | **49.5%** |
+| 2 | 7 | 62 | 50 | 119 | 5.9% |
+| 3 | 2,436 | 2,144 | 479 | 5,059 | **48.2%** |
+
+**Depth 1 and depth 3 produce statistically indistinguishable confidence
+distributions (49.5% vs. 48.2% high, at n=105 that's well within noise).** This is
+the empirical proof requested: `compute_confidence()` — the function that sets
+`recommendation_label`, the number the card actually leads with — carries no
+detectable weight from how many regime dimensions matched. A user reading "high
+confidence" learns nothing about whether that call was conditioned on a full
+3-dimensional macro match or just one dimension (VIX alone); both produce "high"
+about as often as each other. (Depth 2's own anomaly — 5.9% high, a real, bounded,
+unexplained pattern on non-trivial n=119 — stands separately, per §9.3; not chased
+down further here either.)
+
+### 11.3 `p_positive` — full distribution, and the direct comparison to live sharpness
+
+Per-horizon, queried from the persisted rows (n=5,283 each, exact):
+
+| Horizon | mean | std (= "sharpness," `MARKET_MEMORY_V2_BUILD.md` §1.3's corrected
+  definition) | min | max |
+|---|---|---|---|---|
+| 1d | 0.5265 | 0.0877 | 0.1765 | 0.9091 |
+| 5d | 0.5694 | 0.0872 | 0.0741 | 1.0000 |
+| 20d | 0.6248 | 0.0768 | 0.2692 | 0.9200 |
+| 60d | 0.6601 | 0.0841 | 0.2308 | 0.9615 |
+
+Basis-horizon-only (the figure actually shown on the card, per §9.4's caveat about
+`pick_basis_horizon()`'s edge-maximizing selection bias): n=5,283, mean/median≈0.83,
+std=0.1248, range 0.074–1.000.
+
+**Direct comparison to the live figure named (5d sharpness 0.095, `MARKET_MEMORY_V2_
+BUILD.md` §1.3's `0.0946` at 5d):** replay's 5d sharpness is **0.0872 — nearly
+identical, marginally tighter.** This is a real, specific, quantified answer to what
+that comparison was checking for: **20 years of replay across every regime SPY has
+been through (2008 GFC, 2011, 2015-16, 2020 COVID, 2022 hike cycle, multiple bull
+runs) produces essentially the same dispersion in the model's own stated probability
+as a recent few-week live window did.** If the model were genuinely sharper in some
+regimes than others — expressing tighter, more confident probabilities in calm
+periods and wider, more uncertain ones in stress — the 20-year std would be
+*visibly* larger than the live single-window figure, since it would be pooling many
+different sharpness levels together. It isn't. **The model is about as sharp across
+two decades of regime diversity as it is across three weeks — which means Phase D
+cannot treat "the model gets sharper/more confident when regime-conditioned" as
+something already demonstrated; this pilot's own numbers say it isn't happening, at
+least not in a way that shows up in `p_positive`'s spread.** This sits alongside
+§11.2's finding, not separately from it — a confidence function insensitive to depth
+(§11.2) and a probability output whose spread doesn't visibly respond to two decades
+of regime variety (this section) are two versions of the same underlying gap: the
+model's outputs don't move as much with the regime as the regime machinery implies
+they should.
+
+### 11.4 Unknown regime dates and block counts — restated for completeness
+
+Zero dates across the full 20-year window returned `"unknown"` in any regime
+dimension (§9.5's finding, unchanged). Block counts: 5,283 for every one of the 6
+horizon/voter combinations (`forecast` at 1/5/20/60d, `dip_context` at 21/63d) —
+31,698 rows total, confirmed three ways now (dry-run count, real-write count,
+`forecasts_replay_block_counts` query against the live table).
+
+---
+
+## 12. Fix 5's poison-queue fix — dead-letter mechanism, and the 8 stale entries migrated
+
+Found while verifying the live write path in §10.3: 8 staged `create_forecast`
+writes, all from one stale `SMH` run, all failing identically (`HTTP 400
+{"error":"missing fields","missing":["regime_model_version"]}`) because they were
+staged before that field existed. `flush_pending_writes()`/`rewrite_pending_writes()`
+had no concept of a write that will never succeed as-is — every future run would
+retry, fail, and re-stage them, forever, and every future required-field addition
+would only add more entries with no way out.
+
+### 12.1 The fix
+
+`scripts/forecast_engine.py`:
+
+- Every staged entry now carries an `attempts` counter (starts at 0).
+- `rewrite_pending_writes()` — the one place that already sees every attempt from
+  both `persist_or_raise()` (a fresh write) and `flush_pending_writes()` (a retry of
+  something already staged) — increments `attempts` for any write_id that was
+  attempted and failed this run.
+- On reaching `MAX_WRITE_ATTEMPTS = 5`, the entry is moved to
+  `data/dead_letter_forecast_writes.jsonl` (append-only) with `last_error`,
+  `last_attempted_at`, and `dead_lettered_at` recorded, and removed from the pending
+  file — it stops being retried, stops being reported as a fresh failure on every
+  future run.
+- Logged loudly (`[DEAD-LETTER] ...`) — a dead-lettered entry is a forecast that
+  will never be persisted without manual intervention, the same severity class B4/B5
+  were built to make impossible to miss silently, not a routine retry outcome.
+- `mm_journal()` now records the specific failure reason (`_last_mm_journal_error`,
+  set right before every failing return) so the dead-letter record carries the real
+  HTTP error, not just "it failed."
+- `.github/workflows/forecast-engine.yml` and `manual-forecast.yml`'s existing
+  "commit pending-write queue if changed" steps now also `git add
+  data/dead_letter_forecast_writes.jsonl` — same ephemeral-runner reasoning as the
+  pending file's own commit-back step; without this the dead-letter record (and the
+  fact that data loss happened) would vanish with the container.
+
+`MAX_WRITE_ATTEMPTS = 5`: deliberately not 1 (a genuinely transient outage — the
+entire reason this mechanism exists — should get several real chances across
+several separate runs, not fail out on the first retry) and not unbounded (an entry
+that's failed 5 times across 5 separate invocations of this script is past the point
+where "try again next run" is a credible theory).
+
+### 12.2 Test coverage
+
+`scripts/tests/test_dead_letter_queue.py`, isolated from both real queue files the
+same way `test_fail_loud_persistence.py` is (tempdir + before/after content-hash
+assertion on the real files). Verifies: an entry dead-letters on exactly the
+`MAX_WRITE_ATTEMPTS`th failure, not before, with `write_id`/`attempts`/`last_error`/
+payload all preserved; a write that recovers before exhausting its attempts leaves
+no trace in either file; dead-lettering is append-only across independently
+exhausted entries (one doesn't clobber another's record). All passing, full existing
+suite (now 9 files) still green.
+
+### 12.3 The 8 existing entries — migrated, not deleted
+
+Moved directly to `data/dead_letter_forecast_writes.jsonl` (not left to exhaust
+naturally over 5 more runs, per instruction) with `attempts = MAX_WRITE_ATTEMPTS`,
+the real observed `last_error`, and a note that they were manually migrated ahead of
+the normal counter reaching threshold. `data/pending_forecast_writes.jsonl` is now
+empty (removed). Original payloads preserved byte-for-byte in the dead-letter
+record — nothing about the 8 SMH forecasts themselves was deleted, only their
+retry-eligibility.

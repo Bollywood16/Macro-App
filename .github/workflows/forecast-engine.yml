@@ -61,12 +61,19 @@ jobs:
       # run staging a new entry is exactly the case that most needs to
       # survive) -- the job's own conclusion still correctly reflects that
       # step's failure regardless of what a later step does.
+      #
+      # Also commits data/dead_letter_forecast_writes.jsonl (this session's
+      # fix): an entry that exceeds MAX_WRITE_ATTEMPTS moves there instead
+      # of cycling in the pending file forever -- same ephemeral-runner
+      # reasoning applies, it has to be committed back or the dead-letter
+      # record (and the fact that data loss happened) vanishes with the
+      # container.
       - name: Commit pending-write queue if changed
         if: always()
         run: |
           git config user.name "rotation-radar-bot"
           git config user.email "actions@github.com"
-          git add data/pending_forecast_writes.jsonl 2>/dev/null || true
+          git add data/pending_forecast_writes.jsonl data/dead_letter_forecast_writes.jsonl 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No change to the pending-write queue"
             exit 0

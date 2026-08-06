@@ -39,13 +39,14 @@ jobs:
           fi
           python scripts/forecast_engine.py $ARGS
       # B4: see forecast-engine.yml's identical step for why this exists
-      # and why if: always() matters here.
+      # and why if: always() matters here. Also commits the dead-letter
+      # file (this session's fix) -- same reasoning, same file list.
       - name: Commit pending-write queue if changed
         if: always()
         run: |
           git config user.name "rotation-radar-bot"
           git config user.email "actions@github.com"
-          git add data/pending_forecast_writes.jsonl 2>/dev/null || true
+          git add data/pending_forecast_writes.jsonl data/dead_letter_forecast_writes.jsonl 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No change to the pending-write queue"
             exit 0

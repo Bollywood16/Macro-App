@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_utc": "2026-08-07 01:03 UTC",
+  "generated_utc": "2026-08-07 22:07 UTC",
   "params": {
    "ext_threshold_pct": 30.0,
    "rally_lookback_days": 126,
@@ -18,23 +18,15 @@
   ]
  },
  "current": {
-  "as_of": "2026-08-06",
+  "as_of": "2026-08-07",
   "symbol": "SMH",
-  "close": 571.48,
-  "ma200": 454.79,
-  "ext_pct": 25.7,
-  "trail_6m_pct": 49.6,
+  "close": 582.7,
+  "ma200": 455.98,
+  "ext_pct": 27.8,
+  "trail_6m_pct": 52.9,
   "trigger_active": false,
   "regime_tag": "rising",
   "nearest_analogs": [
-   {
-    "date": "2003-08-22",
-    "symbol": "SOX",
-    "regime": "rising",
-    "ext_pct": 30.6,
-    "fwd_126d_pct": 13.09,
-    "max_dd_pct": -4.52
-   },
    {
     "date": "2009-07-23",
     "symbol": "SOX",
@@ -42,6 +34,14 @@
     "ext_pct": 30.9,
     "fwd_126d_pct": 8.13,
     "max_dd_pct": -6.17
+   },
+   {
+    "date": "2003-08-22",
+    "symbol": "SOX",
+    "regime": "rising",
+    "ext_pct": 30.6,
+    "fwd_126d_pct": 13.09,
+    "max_dd_pct": -4.52
    },
    {
     "date": "1995-09-25",
@@ -1181,7 +1181,7 @@
     118.51,
     116.61,
     115.35,
-    121.59
+    124.7
    ]
   },
   {
@@ -1197,7 +1197,8 @@
    "path": [
     100.0,
     91.57,
-    97.61
+    97.61,
+    100.1
    ]
   }
  ]

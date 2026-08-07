@@ -4,7 +4,7 @@
 `BUILD.md` (which used a different §6 scheme). Where they disagree, this file wins.
 `PHASE_PLAN.md` should be deleted or reduced to a one-line pointer here.
 
-Last updated: 2026-08-05
+Last updated: 2026-08-07
 
 ---
 
@@ -27,6 +27,7 @@ Last updated: 2026-08-05
 | `3bce17f` | **Phase C3** — `scripts/pit_store.py` (`as_of()`, `PointInTimeDataContext`), `scripts/pit_seed.py`. See `docs/C3_DESIGN.md` §5. |
 | (this session) | **Phase C2** — `scripts/replay.py`'s `replay(ticker, date)`. Acceptance test passing against real seeded data — see `docs/C3_DESIGN.md` §7. |
 | (this session) | **Fix 5 dead-letter** — `MAX_WRITE_ATTEMPTS` (5) + `data/dead_letter_forecast_writes.jsonl`: an entry that fails identically forever (payload predates a now-required field) stops retrying forever and gets moved out with its failure reason, logged loudly. The 8 pre-existing stale `SMH` entries (staged before `regime_model_version` existed) migrated to the dead-letter file. See `docs/C3_DESIGN.md` §12. |
+| `20260807140000_...`, `20260807143000_...` | **C4 complete (17/17 tickers)** — full 2005-2025 `forecasts_replay` backfill. **`forecasts_replay_block_counts` fixed**: was 500ing on the grown (~530k-row) table (12 sequential `COUNT(*)`s blowing the function's execution window); replaced with a `GROUP BY`-aggregate RPC + composite index, refreshed nightly into a singleton summary row (`forecasts_replay_block_counts_summary`) that the read op now just selects. See `docs/C3_DESIGN.md` §15. |
 
 ### Permanent regression tests (all passing)
 
@@ -53,22 +54,25 @@ Last updated: 2026-08-05
 3. ~~**C3** — point-in-time Parquet store, `as_of()`~~ Done — `scripts/pit_store.py`.
    Git-history extraction was investigated and rejected as a data source (`docs/
    C3_DESIGN.md` §1) — nothing to extract.
-4. **C4** — historical backfill (dedicated GH Actions workflow). Code built. **The
-   GH Actions matrix itself cannot be dispatched from this environment** — confirmed
-   `403: Resource not accessible by integration` even with the workflow pushed and
-   visible on the remote; this token has no `actions:write`. Backfill run directly
-   in-environment instead, against the same `forecasts_replay` table.
-   Migration applied, `mm-journal` redeployed (v9→v10), live write path re-verified
-   post-deploy, dry-run + real-write SPY pilots both run to completion —
-   `docs/C3_DESIGN.md` §9-10. A first 16-process (one per remaining ticker)
-   attempt was killed after measuring severe oversubscription on 2 CPU cores;
-   corrected to 2 sequential-multi-ticker workers (matching core count) — §13.
-   **In-progress, checkpointed and stopped for the day per instruction**: `SPY`
-   (§10), `^SOX`, and `MGK` are fully backfilled (confirmed against the live table,
-   not just logs); 14 of 17 tickers remain, most untouched beyond a small partial
-   head start. `--resume` fixed (previously would have duplicated the last written
-   date; now correctly starts from the next trading day after it) and ready to
-   pick up exactly where each worker stopped.
+4. ~~**C4** — historical backfill~~ **Done — all 17/17 tickers backfilled, full
+   2005-2025 window.** The GH Actions matrix itself was never dispatchable from
+   this environment (confirmed `403: Resource not accessible by integration`,
+   no `actions:write`); run directly in-environment instead via 2
+   sequential-multi-ticker workers (matching the 2-CPU-core environment — a first
+   16-process attempt was killed after measuring severe oversubscription, §13),
+   `nohup ... & disown`, `--resume`-driven across several checkpointed sessions —
+   `docs/C3_DESIGN.md` §9-10, §13-15. Final per-bucket `forecasts_replay` block
+   counts (live-verified via the now-fixed `forecasts_replay_block_counts`, §15):
+
+   | Bucket | Count |
+   |---|---|
+   | `forecast_1d` / `5d` / `20d` / `60d` | 88,572 each |
+   | `dip_context_21d` | 87,746 |
+   | `dip_context_63d` | 87,662 |
+
+   `forecasts_replay_block_counts` was found broken (500ing on the grown table)
+   at the end of the backfill and fixed in the same session — see the table
+   above this list and `docs/C3_DESIGN.md` §15.1.
 5. **D** — scoring on the replay ledger
 6. **E / F / G / H** — bottom-tell library, flush + cross-asset + ATH + committee + event mode, output rebuild, handoff
 

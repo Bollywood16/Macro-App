@@ -94,6 +94,7 @@ const REQUIRED_FIELDS: Record<string, string[]> = {
   create_forecast_replay_batch: ["rows"],
   latest_forecast_replay_date: ["ticker", "voter"],
   forecasts_replay_block_counts: [],
+  refresh_forecasts_replay_block_counts: [],
   create_decision: ["forecast_id", "action"],
   get_forecast: ["forecast_id"],
   trigger_forecast: ["ticker"],
@@ -217,25 +218,63 @@ Deno.serve(async (req) => {
       }
 
       // C4 spec's own acceptance line: "Report block count per horizon on
-      // completion." head:true + count:"exact" makes each of these a cheap
-      // COUNT(*), not a row fetch -- safe against a ~530,000-row table.
-      // Fixed horizon/voter combos (not a GROUP BY via RPC) -- one Postgres
-      // function would be marginally cheaper than 8 small queries, but 8
-      // queries needs no new function/deploy step beyond this one file.
+      // completion." Used to run 12 sequential count:"exact" queries here,
+      // live, on every call -- fine against an empty/small table, but
+      // forecasts_replay is now the full 17-ticker backfill ledger
+      // (~530,000 rows) and that reproducibly 500s ({"error":"db_error",
+      // "detail":""}, 3/3 retries) -- the function's execution window
+      // running out across 12 round trips. Fixed (this change): serve the
+      // precomputed singleton row from forecasts_replay_block_counts_
+      // summary instead -- a single indexed SELECT regardless of table
+      // size. See refresh_forecasts_replay_block_counts below for what
+      // populates it, and the migration's own docstring
+      // (20260807140000_forecasts_replay_block_counts_summary.sql) for the
+      // full before/after. `computed_at` is returned alongside the counts
+      // so a caller can see how stale the snapshot is, rather than
+      // silently trusting a live-looking number that's actually last
+      // night's.
       case "forecasts_replay_block_counts": {
-        const horizons = [1, 5, 20, 60, 21, 63];
-        const voters: Array<"forecast" | "dip_context"> = ["forecast", "dip_context"];
+        const { data, error } = await supabase
+          .from("forecasts_replay_block_counts_summary")
+          .select("counts, computed_at").eq("id", 1).maybeSingle();
+        if (error) throw error;
+        return json({
+          block_counts: data?.counts ?? {},
+          computed_at: data?.computed_at ?? null,
+        });
+      }
+
+      // The actual counting work forecasts_replay_block_counts used to do
+      // live, moved here so it only runs on a schedule (replay-block-
+      // counts-refresh.yml, nightly) instead of on every read. FIRST
+      // version of this op (20260807140000) just relocated the original 12
+      // sequential count:"exact" queries here unchanged -- verified
+      // directly that this alone was NOT enough; the refreshed op still
+      // 500'd identically, because 12 round-trip COUNT(*)s against the
+      // ~530,000-row post-C4 table can exceed the function's own execution
+      // window regardless of what schedule calls it. Fixed (this version):
+      // one grouped-aggregate RPC (forecasts_replay_block_counts_agg(),
+      // 20260807143000_forecasts_replay_block_counts_agg_fn.sql) replaces
+      // all 12 queries with a single round trip / single scan. Upserts the
+      // id=1 singleton row -- see the summary table's migration docstring
+      // for why a single always-overwritten row rather than a history
+      // table (nothing here needs point-in-time counts, only "the
+      // latest").
+      case "refresh_forecasts_replay_block_counts": {
+        const { data, error } = await supabase.rpc("forecasts_replay_block_counts_agg");
+        if (error) throw error;
         const counts: Record<string, number> = {};
-        for (const voter of voters) {
-          for (const h of horizons) {
-            const { count, error } = await supabase
-              .from("forecasts_replay").select("*", { count: "exact", head: true })
-              .eq("voter", voter).eq("horizon_days", h);
-            if (error) throw error;
-            if (count && count > 0) counts[`${voter}_${h}d`] = count;
-          }
+        for (const row of (data ?? []) as Array<
+          { voter: string; horizon_days: number; cnt: number }
+        >) {
+          if (row.cnt > 0) counts[`${row.voter}_${row.horizon_days}d`] = row.cnt;
         }
-        return json({ block_counts: counts });
+        const computed_at = new Date().toISOString();
+        const { error: upsertError } = await supabase
+          .from("forecasts_replay_block_counts_summary")
+          .upsert({ id: 1, counts, computed_at });
+        if (upsertError) throw upsertError;
+        return json({ block_counts: counts, computed_at });
       }
 
       case "create_decision": {

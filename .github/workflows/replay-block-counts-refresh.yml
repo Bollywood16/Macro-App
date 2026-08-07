@@ -1,0 +1,37 @@
+name: Replay Block Counts Refresh
+
+# Precomputes forecasts_replay_block_counts_summary (single summary row)
+# nightly so mm-journal's forecasts_replay_block_counts read op can stay a
+# cheap single-row SELECT instead of running 12 sequential COUNT(*)
+# queries against forecasts_replay live -- the latter reproducibly 500s
+# now that the C4 backfill (MARKET_MEMORY_V2_BUILD.md #4) has landed the
+# full ~530,000-row replay ledger. See
+# supabase/migrations/20260807140000_forecasts_replay_block_counts_summary.sql
+# and scripts/refresh_replay_block_counts.py for the full before/after.
+#
+# Runs daily, not just weekdays 1-5 like the live forecasting pipeline --
+# forecasts_replay isn't a daily-market-day table (it's a backfill/replay
+# ledger, appended to only by occasional C4 re-runs), so there's no reason
+# to tie this to the trading calendar; it's just keeping a summary row
+# fresh whenever anything upstream changes it.
+
+on:
+  schedule:
+    - cron: "0 10 * * *"   # 10:00 UTC daily -- off-peak, clear of every
+                            # other scheduled workflow's window (21:15-22:35 UTC)
+  workflow_dispatch: {}
+
+jobs:
+  refresh-block-counts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install yfinance pandas numpy
+      - name: Refresh forecasts_replay_block_counts_summary
+        env:
+          APP_PASSPHRASE: ${{ secrets.APP_PASSPHRASE }}
+        run: python3 scripts/refresh_replay_block_counts.py

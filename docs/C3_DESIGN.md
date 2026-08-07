@@ -1226,3 +1226,86 @@ morning):** re-run `--tickers XLE,XLF` (worker 1) and `--tickers XLV,XLY`
 (worker 2) with `--resume`. All 4 are confirmed untouched beyond their
 §13-era ~168/5,283 dates — no partial-batch risk. 13 of 17 total tickers
 (`SPY`, `^SOX`, `MGK` + the 10 above) are now fully backfilled.
+
+## 15. C4 backfill complete (17/17) — `forecasts_replay_block_counts` fixed
+
+**Before launching**, confirmed §14's flagged RSP anomaly (undocumented
+3,674-date head start) wasn't masking a gap: `worker2.log`'s `RSP` block
+resumed cleanly at `2019-08-08` (the day after its `2019-08-07` last-written
+date), checkpoint dates progressed monotonically (`2021-08-02` →
+`2023-07-28` → `2025-07-28`, consistent with the trading calendar's ~250
+dates/year pace), and it finished `1609/1609` dates scored with exactly
+`9654` rows (`1609 × 6`, no shortfall) — a clean continuation, not a gappy
+one. Pre-launch `latest_forecast_replay_date` check confirmed all 4
+remaining tickers still sat at `2005-08-31` (§14's checkpoint), untouched.
+
+**Same 2-worker split, same `--resume`, same `nohup ... & disown` pattern**
+as §13-14:
+
+- Worker 1: `XLE, XLF`
+- Worker 2: `XLV, XLY`
+
+**Result — all 4 completed clean, no `[warn]`/error lines in either log:**
+
+| Ticker | Dates scored | Rows written | Elapsed |
+|---|---|---|---|
+| `XLE` | 5,115/5,115 (+168 pre-existing = 5,283/5,283) | 30,690 | 56.5 min |
+| `XLF` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | 52.9 min |
+| `XLV` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | 52.8 min |
+| `XLY` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | 53.7 min |
+
+Verified against the live table (not just logs): `latest_forecast_replay_date`
+for all 4 returns `2025-12-31`. **All 17 replay tickers are now fully
+backfilled to the full 2005-2025 window.**
+
+### 15.1 `forecasts_replay_block_counts` fix
+
+§14 flagged this as broken (`HTTP 500 {"error":"db_error","detail":""}`,
+3/3 retries) and guessed the cause: 12 sequential `count:"exact"` queries no
+longer finishing inside the function's execution window against the grown
+table. Fixed in two steps, the first of which turned out to be
+insufficient — recorded here because it's a real lesson, not because it's
+interesting:
+
+1. **First attempt** (`20260807140000_forecasts_replay_block_counts_summary.sql`):
+   added a singleton summary table
+   (`forecasts_replay_block_counts_summary`, `id=1`, `counts jsonb`,
+   `computed_at`) and a new op, `refresh_forecasts_replay_block_counts`,
+   that ran the *same* 12 queries as before but on a schedule instead of at
+   read time, upserting the result. **Verified directly this was NOT
+   enough**: calling the refreshed op still returned the identical 500.
+   Moving 12 round trips from request-time to schedule-time doesn't help
+   if the 12 round trips themselves are what's blowing the window —
+   relocating the cost isn't the same as reducing it.
+2. **Actual fix** (`20260807143000_forecasts_replay_block_counts_agg_fn.sql`):
+   a Postgres function, `forecasts_replay_block_counts_agg()`
+   (`SECURITY DEFINER`, `service_role`-only `EXECUTE`), doing one
+   `GROUP BY voter, horizon_days` — all 12 combinations in a single scan —
+   plus a supporting composite index `(voter, horizon_days)` (the two
+   pre-existing single-column indexes only supported the old per-combo
+   query shape). `refresh_forecasts_replay_block_counts` now calls this via
+   one `supabase.rpc(...)`, one round trip, instead of 12.
+   `forecasts_replay_block_counts` itself is now a plain single-row
+   `SELECT` from the summary table — cheap regardless of table size.
+
+Both migrations applied via `npx supabase db push --linked`; `mm-journal`
+redeployed twice (once per step) via `npx supabase functions deploy
+mm-journal --project-ref anzbpxqvibgpxnwgyqoc`. Nightly refresh:
+`.github/workflows/replay-block-counts-refresh.yml` (`scripts/
+refresh_replay_block_counts.py`, 10:00 UTC daily — not gated to weekdays
+since `forecasts_replay` isn't a daily-market-day table).
+
+**Verified working, not just deployed**: after the real fix, the refresh
+op completed in ~4s (was timing out before) and the read op returned the
+same result 3/3 times (matching the rigor of the original 3/3-failure
+check):
+
+| Bucket | Pre-this-run (§14) | +this run (4 × 5,115) | New total | Live-verified |
+|---|---|---|---|---|
+| `forecast_1d` / `5d` / `20d` / `60d` | 68,112 | +20,460 | **88,572** each | ✓ |
+| `dip_context_21d` | 67,286 | +20,460 | **87,746** | ✓ |
+| `dip_context_63d` | 67,202 | +20,460 | **87,662** | ✓ |
+
+Every value matches the arithmetic prediction from this run's own
+`Done:` lines exactly — the fixed op's numbers are internally consistent,
+not just non-erroring.

@@ -1132,3 +1132,97 @@ the same `--tickers` lists (or just the remaining sub-lists) and `--resume` to p
 up exactly where each worker stopped. 14 of 16 remaining tickers are still fully
 untouched beyond whatever the original killed 16-way attempt gave them (~150-250
 dates each) — this session covered 2 of 16 to completion.
+
+## 14. C4 backfill resumed — 10 of 14 remaining tickers completed, stopped after in-flight ticker per instruction
+
+Fresh session/environment (no state carried over from §13 — confirmed no
+`worker*.log`, no running `replay_backfill.py` processes before this run
+started; `APP_PASSPHRASE` had to be re-supplied interactively, same as any
+other secret that doesn't persist across sessions).
+
+**Status check before launching** (`latest_forecast_replay_date` per ticker,
+both voters — `forecasts_replay_block_counts` was consulted too, but see the
+failure noted below): confirmed the §13 checkpoint held for 12 of the 14
+tickers (all still at `2005-08-31`, ~168/5,283 dates, matching the killed
+16-way run's residue) — except **`GLD`** (already at `2006-10-17`, 452 dates)
+and **`RSP`** (already at `2019-08-07`, 3,674 of 5,283 dates — no documented
+explanation for this one; flagged to the user, not chased down further here).
+Expected window confirmed identical for all 14 via `pit_store`: 5,283 trading
+dates, 2005-01-03 → 2025-12-31 (all predate the 2005 start, so no
+warmup-floor exclusions expected — matching SPY/`^SOX`).
+
+**Same 2-worker split as §13** (kept — already close to balanced on
+remaining-date workload despite `GLD`/`RSP`'s head start: ~35,521 vs. ~32,299
+remaining dates, ~9% apart, better than any resplit by ticker count):
+
+- Worker 1: `GLD, IWM, QQQ, SMH, XLB, XLE, XLF`
+- Worker 2: `RSP, XLI, XLK, XLP, XLU, XLV, XLY`
+
+Launched via `nohup ... & disown`, logging to `worker1.log`/`worker2.log`.
+Progress tracked by polling `latest_forecast_replay_date` per ticker every 10
+min (not log-tailing — `replay_backfill.py`'s prints aren't `flush=True`
+except the `=== [i/n] TICKER ===` banner, so a log only reliably shows a
+ticker's true completion once the *next* ticker's banner has already also
+printed, which is too late to use as a stop signal).
+
+**Stopped mid-run per instruction, same safe kill point as §13** (right after
+the in-flight ticker's last write lands — batch already flushed/committed,
+nothing in-flight) — but via DB polling this time, not log-tailing: polled
+`latest_forecast_replay_date` for each worker's *current* ticker every 3s and
+sent `SIGKILL` the instant it reached `2025-12-31`, before the next ticker's
+loop iteration could start. Confirmed clean: worker 1 killed immediately
+after `XLB` (never touched `XLE`), worker 2 killed immediately after `XLU`
+(never touched `XLV`).
+
+**Result — 10 of 14 done, verified against every `Done:` line in both full
+logs (no `[warn]`/error lines anywhere in either):**
+
+| Ticker | Dates scored | Rows written | Complete? |
+|---|---|---|---|
+| `GLD` | 4,831/4,831 (+452 pre-existing = 5,283/5,283) | 28,986 | **Yes** |
+| `IWM` | 5,115/5,115 (+168 pre-existing = 5,283/5,283) | 30,690 | **Yes** |
+| `QQQ` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | **Yes** |
+| `SMH` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | **Yes** |
+| `XLB` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | **Yes** |
+| `RSP` | 1,609/1,609 (+3,674 pre-existing = 5,283/5,283) | 9,654 | **Yes** |
+| `XLI` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | **Yes** |
+| `XLK` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | **Yes** |
+| `XLP` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | **Yes** |
+| `XLU` | 5,115/5,115 (+168 = 5,283/5,283) | 30,690 | **Yes** |
+| `XLE` | untouched (killed before this ticker's loop started) | — | No — still at 2005-08-31, 168/5,283 |
+| `XLF` | untouched | — | No — still at 2005-08-31, 168/5,283 |
+| `XLV` | untouched | — | No — still at 2005-08-31, 168/5,283 |
+| `XLY` | untouched | — | No — still at 2005-08-31, 168/5,283 |
+
+No shortfalls — every completed ticker hit its full expected 5,283-date
+window, and `dates_scored == dates_total` on every `Done:` line (rows always
+exactly `dates × 6`, i.e. no dip-context gaps in the resumed range, unlike
+the sparser early-history dip-context coverage baked into the pre-run global
+counts).
+
+**Bug found: `forecasts_replay_block_counts` is now broken** — reproducibly
+(3/3 retries), returning `HTTP 500 {"error":"db_error","detail":""}`. Not
+attempted here (production edge function, needs sign-off), but the likely
+cause: its 12 sequential `COUNT(*)` queries (6 horizons × 2 voters, one
+Postgres round-trip each) probably no longer finish inside whatever timeout
+applies now that the table's grown well past the ~530,000 rows its own
+comment cites as the safe case it was checked against — a single grouped SQL
+query (the alternative the comment already considered "marginally cheaper")
+would likely fix it and is worth doing before relying on this op again.
+**Global counts below are computed from this run's per-ticker deltas, not
+independently re-queried against the live table** — every `Done:` line
+confirmed `rows_written == dates_scored × 6`, so the run's total of 47,360
+newly-scored dates (across both workers) applies identically to all 6
+buckets:
+
+| Bucket | Pre-run (§13 baseline) | This run | New total |
+|---|---|---|---|
+| `forecast_1d` / `5d` / `20d` / `60d` | 20,752 | +47,360 | 68,112 each |
+| `dip_context_21d` | 19,926 | +47,360 | 67,286 |
+| `dip_context_63d` | 19,842 | +47,360 | 67,202 |
+
+**Next step (not done here, per instruction — user resumes in the
+morning):** re-run `--tickers XLE,XLF` (worker 1) and `--tickers XLV,XLY`
+(worker 2) with `--resume`. All 4 are confirmed untouched beyond their
+§13-era ~168/5,283 dates — no partial-batch risk. 13 of 17 total tickers
+(`SPY`, `^SOX`, `MGK` + the 10 above) are now fully backfilled.

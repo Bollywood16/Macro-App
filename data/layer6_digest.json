@@ -1,20 +1,21 @@
 {
-  "generated_utc": "2026-08-12 23:08 UTC",
+  "generated_utc": "2026-08-13 23:11 UTC",
   "source": "top setups from data/scanner_digest.json, opportunity_score-ranked",
-  "scanner_digest_generated_utc": "2026-08-12 23:06 UTC",
+  "scanner_digest_generated_utc": "2026-08-13 23:07 UTC",
   "interval": "15m",
   "top_n": 5,
   "scanned_tickers": [
     "XLU",
     "GLD",
     "XLY",
-    "^SOX"
+    "RSP",
+    "XLB"
   ],
   "results": [
     {
       "ticker": "XLU",
       "interval": "15m",
-      "generated_utc": "2026-08-12 23:08 UTC",
+      "generated_utc": "2026-08-13 23:11 UTC",
       "verdict": "NO-GO",
       "gates": {
         "close_above_vwap": true,
@@ -22,43 +23,21 @@
         "macd_histogram_positive": false
       },
       "facts": {
-        "bar_ts": "2026-08-12T15:45:00-04:00",
-        "close": 43.85,
-        "session_vwap": 43.7863,
-        "bar_volume": 2789886,
-        "prior_bar_volume": 1471111,
-        "relative_volume_vs_trailing_avg": 5.956,
-        "macd_histogram": -0.0067,
-        "rsi14": 59.94
+        "bar_ts": "2026-08-13T15:45:00-04:00",
+        "close": 44.025,
+        "session_vwap": 44.018,
+        "bar_volume": 2749827,
+        "prior_bar_volume": 1106763,
+        "relative_volume_vs_trailing_avg": 5.374,
+        "macd_histogram": -0.00556,
+        "rsi14": 55.76
       },
       "warnings": []
     },
     {
       "ticker": "GLD",
       "interval": "15m",
-      "generated_utc": "2026-08-12 23:08 UTC",
-      "verdict": "NO-GO",
-      "gates": {
-        "close_above_vwap": true,
-        "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
-      },
-      "facts": {
-        "bar_ts": "2026-08-12T15:45:00-04:00",
-        "close": 404.88,
-        "session_vwap": 404.8528,
-        "bar_volume": 637405,
-        "prior_bar_volume": 164441,
-        "relative_volume_vs_trailing_avg": 0.662,
-        "macd_histogram": -0.05992,
-        "rsi14": 55.96
-      },
-      "warnings": []
-    },
-    {
-      "ticker": "XLY",
-      "interval": "15m",
-      "generated_utc": "2026-08-12 23:08 UTC",
+      "generated_utc": "2026-08-13 23:11 UTC",
       "verdict": "NO-GO",
       "gates": {
         "close_above_vwap": false,
@@ -66,36 +45,80 @@
         "macd_histogram_positive": true
       },
       "facts": {
-        "bar_ts": "2026-08-12T15:45:00-04:00",
-        "close": 117.87,
-        "session_vwap": 118.1074,
-        "bar_volume": 854130,
-        "prior_bar_volume": 409764,
-        "relative_volume_vs_trailing_avg": 8.788,
-        "macd_histogram": 0.05358,
-        "rsi14": 38.55
+        "bar_ts": "2026-08-13T15:45:00-04:00",
+        "close": 398.96,
+        "session_vwap": 400.3894,
+        "bar_volume": 496357,
+        "prior_bar_volume": 272303,
+        "relative_volume_vs_trailing_avg": 2.282,
+        "macd_histogram": 0.01964,
+        "rsi14": 36.72
       },
       "warnings": []
     },
     {
-      "ticker": "^SOX",
+      "ticker": "XLY",
       "interval": "15m",
-      "generated_utc": "2026-08-12 23:08 UTC",
+      "generated_utc": "2026-08-13 23:11 UTC",
+      "verdict": "GO",
+      "gates": {
+        "close_above_vwap": true,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": true
+      },
+      "facts": {
+        "bar_ts": "2026-08-13T15:45:00-04:00",
+        "close": 118.46,
+        "session_vwap": 118.3136,
+        "bar_volume": 562200,
+        "prior_bar_volume": 152363,
+        "relative_volume_vs_trailing_avg": 4.457,
+        "macd_histogram": 0.03608,
+        "rsi14": 55.0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "RSP",
+      "interval": "15m",
+      "generated_utc": "2026-08-13 23:11 UTC",
+      "verdict": "GO",
+      "gates": {
+        "close_above_vwap": true,
+        "volume_ge_prior_bar": true,
+        "macd_histogram_positive": true
+      },
+      "facts": {
+        "bar_ts": "2026-08-13T15:45:00-04:00",
+        "close": 222.74,
+        "session_vwap": 222.1449,
+        "bar_volume": 662908,
+        "prior_bar_volume": 616560,
+        "relative_volume_vs_trailing_avg": 1.214,
+        "macd_histogram": 0.06797,
+        "rsi14": 71.93
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLB",
+      "interval": "15m",
+      "generated_utc": "2026-08-13 23:11 UTC",
       "verdict": "NO-GO",
       "gates": {
         "close_above_vwap": false,
         "volume_ge_prior_bar": true,
-        "macd_histogram_positive": false
+        "macd_histogram_positive": true
       },
       "facts": {
-        "bar_ts": "2026-08-12T15:45:00-04:00",
-        "close": 12399.874,
-        "session_vwap": NaN,
-        "bar_volume": 0,
-        "prior_bar_volume": 0,
-        "relative_volume_vs_trailing_avg": null,
-        "macd_histogram": -23.88021,
-        "rsi14": 48.27
+        "bar_ts": "2026-08-13T15:45:00-04:00",
+        "close": 52.295,
+        "session_vwap": 52.4077,
+        "bar_volume": 1578011,
+        "prior_bar_volume": 294887,
+        "relative_volume_vs_trailing_avg": 5.724,
+        "macd_histogram": 0.0097,
+        "rsi14": 40.52
       },
       "warnings": []
     }

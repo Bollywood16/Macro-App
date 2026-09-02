@@ -1,34 +1,9 @@
 {
-  "generated_utc": "2026-09-01 01:20 UTC",
+  "generated_utc": "2026-09-02 00:23 UTC",
   "source": "top setups from data/scanner_digest.json, opportunity_score-ranked",
-  "scanner_digest_generated_utc": "2026-09-01 01:19 UTC",
+  "scanner_digest_generated_utc": "2026-09-02 00:21 UTC",
   "interval": "15m",
   "top_n": 5,
-  "scanned_tickers": [
-    "SMH"
-  ],
-  "results": [
-    {
-      "ticker": "SMH",
-      "interval": "15m",
-      "generated_utc": "2026-09-01 01:20 UTC",
-      "verdict": "GO",
-      "gates": {
-        "close_above_vwap": true,
-        "volume_ge_prior_bar": true,
-        "macd_histogram_positive": true
-      },
-      "facts": {
-        "bar_ts": "2026-08-31T15:45:00-04:00",
-        "close": 556.44,
-        "session_vwap": 555.4653,
-        "bar_volume": 967216,
-        "prior_bar_volume": 159009,
-        "relative_volume_vs_trailing_avg": 10.443,
-        "macd_histogram": 0.29653,
-        "rsi14": 54.91
-      },
-      "warnings": []
-    }
-  ]
+  "scanned_tickers": [],
+  "results": []
 }

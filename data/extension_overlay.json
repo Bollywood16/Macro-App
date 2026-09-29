@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_utc": "2026-09-26 00:01 UTC",
+  "generated_utc": "2026-09-29 01:11 UTC",
   "params": {
    "ext_threshold_pct": 30.0,
    "rally_lookback_days": 126,
@@ -18,23 +18,15 @@
   ]
  },
  "current": {
-  "as_of": "2026-09-24",
+  "as_of": "2026-09-25",
   "symbol": "SMH",
-  "close": 600.52,
-  "ma200": 492.04,
-  "ext_pct": 22.0,
-  "trail_6m_pct": 50.5,
+  "close": 606.56,
+  "ma200": 493.23,
+  "ext_pct": 23.0,
+  "trail_6m_pct": 59.3,
   "trigger_active": false,
   "regime_tag": "rising",
   "nearest_analogs": [
-   {
-    "date": "2003-08-22",
-    "symbol": "SOX",
-    "regime": "rising",
-    "ext_pct": 30.6,
-    "fwd_126d_pct": 13.09,
-    "max_dd_pct": -4.52
-   },
    {
     "date": "2009-07-23",
     "symbol": "SOX",
@@ -44,12 +36,20 @@
     "max_dd_pct": -6.17
    },
    {
-    "date": "1997-01-06",
+    "date": "1997-04-07",
     "symbol": "SOX",
     "regime": "rising",
-    "ext_pct": 30.1,
-    "fwd_126d_pct": 26.33,
-    "max_dd_pct": 0.0
+    "ext_pct": 33.7,
+    "fwd_126d_pct": 29.75,
+    "max_dd_pct": -10.94
+   },
+   {
+    "date": "2003-08-22",
+    "symbol": "SOX",
+    "regime": "rising",
+    "ext_pct": 30.6,
+    "fwd_126d_pct": 13.09,
+    "max_dd_pct": -4.52
    }
   ]
  },
@@ -1188,7 +1188,7 @@
     119.97,
     112.78,
     128.06,
-    127.85
+    125.79
    ]
   },
   {
@@ -1211,7 +1211,8 @@
     91.97,
     95.79,
     96.58,
-    102.63
+    102.63,
+    100.98
    ]
   }
  ]

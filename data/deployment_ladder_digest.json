@@ -1,15 +1,15 @@
 {
   "ticker": "SPY",
-  "as_of": "2026-10-13",
-  "price": 778.1,
+  "as_of": "2026-10-20",
+  "price": 763.25,
   "halt": false,
   "halt_reasons": [],
   "fills_blocked": false,
   "guardrails": {
     "hy_oas": {
       "available": true,
-      "latest_pct": 3.15,
-      "21d_change_pct": 0.44,
+      "latest_pct": 3.31,
+      "21d_change_pct": 0.61,
       "level_threshold_pct": 8.0,
       "jump_threshold_pct": 1.5,
       "blowout": false
@@ -32,7 +32,7 @@
   },
   "tranche2": {
     "trailing_high_20d": 779.09,
-    "drawdown_from_high_pct": -0.13,
+    "drawdown_from_high_pct": -2.03,
     "eligible_rungs": [],
     "all_rungs": [
       {

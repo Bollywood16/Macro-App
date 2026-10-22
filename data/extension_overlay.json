@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_utc": "2026-10-21 00:02 UTC",
+  "generated_utc": "2026-10-22 00:08 UTC",
   "params": {
    "ext_threshold_pct": 30.0,
    "rally_lookback_days": 126,
@@ -18,12 +18,12 @@
   ]
  },
  "current": {
-  "as_of": "2026-10-19",
+  "as_of": "2026-10-20",
   "symbol": "SMH",
-  "close": 548.46,
-  "ma200": 512.29,
-  "ext_pct": 7.1,
-  "trail_6m_pct": 18.2,
+  "close": 546.36,
+  "ma200": 513.15,
+  "ext_pct": 6.5,
+  "trail_6m_pct": 17.6,
   "trigger_active": false,
   "regime_tag": "rising",
   "nearest_analogs": [
@@ -56,12 +56,12 @@
  "cohorts": {
   "rising": {
    "n": 28,
-   "n_complete": 26,
-   "median_fwd_63d_pct": 7.5,
-   "median_fwd_126d_pct": 11.39,
-   "median_max_dd_pct": -10.78,
+   "n_complete": 27,
+   "median_fwd_63d_pct": 9.09,
+   "median_fwd_126d_pct": 13.09,
+   "median_max_dd_pct": -10.62,
    "worst_max_dd_pct": -57.54,
-   "pct_positive_126d": 69.0
+   "pct_positive_126d": 70.0
   },
   "rolling": {
    "n": 0,
@@ -85,32 +85,32 @@
  "median_paths": {
   "rising": [
    100.0,
-   99.02,
-   97.83,
-   98.65,
-   102.69,
-   102.27,
-   102.38,
-   105.19,
-   103.94,
-   102.26,
-   100.17,
-   103.59,
-   105.77,
-   106.81,
-   104.23,
-   106.28,
-   108.25,
-   109.11,
-   106.37,
-   109.92,
-   109.13,
-   113.42,
-   114.68,
-   106.7,
-   109.34,
-   113.47,
-   111.4
+   99.24,
+   97.96,
+   99.23,
+   103.22,
+   102.61,
+   102.64,
+   105.26,
+   105.54,
+   103.67,
+   100.61,
+   105.15,
+   105.94,
+   109.77,
+   104.82,
+   106.73,
+   109.17,
+   110.58,
+   108.03,
+   110.5,
+   111.67,
+   114.79,
+   115.09,
+   107.61,
+   112.22,
+   113.87,
+   113.09
   ],
   "rolling": []
  },
@@ -1162,9 +1162,9 @@
    "trail_6m_pct": 43.9,
    "regime": "rising",
    "fwd_63d_pct": 24.57,
-   "fwd_126d_pct": null,
+   "fwd_126d_pct": 16.11,
    "max_dd_pct": 0.0,
-   "complete": false,
+   "complete": true,
    "path": [
     100.0,
     103.65,
@@ -1191,7 +1191,8 @@
     127.45,
     133.39,
     123.21,
-    113.87
+    113.87,
+    116.11
    ]
   },
   {
@@ -1200,7 +1201,7 @@
    "ext_pct": 35.7,
    "trail_6m_pct": 53.5,
    "regime": "rising",
-   "fwd_63d_pct": null,
+   "fwd_63d_pct": -6.79,
    "fwd_126d_pct": null,
    "max_dd_pct": -15.36,
    "complete": false,
@@ -1218,7 +1219,7 @@
     106.42,
     101.85,
     90.23,
-    91.41
+    93.21
    ]
   }
  ]

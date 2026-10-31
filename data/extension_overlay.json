@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_utc": "2026-10-30 01:16 UTC",
+  "generated_utc": "2026-10-31 00:57 UTC",
   "params": {
    "ext_threshold_pct": 30.0,
    "rally_lookback_days": 126,
@@ -18,12 +18,12 @@
   ]
  },
  "current": {
-  "as_of": "2026-10-28",
+  "as_of": "2026-10-29",
   "symbol": "SMH",
-  "close": 567.67,
-  "ma200": 517.98,
-  "ext_pct": 9.6,
-  "trail_6m_pct": 13.6,
+  "close": 561.67,
+  "ma200": 518.83,
+  "ext_pct": 8.3,
+  "trail_6m_pct": 10.8,
   "trigger_active": false,
   "regime_tag": "rising",
   "nearest_analogs": [
@@ -1220,7 +1220,7 @@
     101.85,
     90.23,
     87.33,
-    93.31
+    86.59
    ]
   }
  ]

@@ -1,24 +1,22 @@
 {
   "ticker": "SPY",
-  "as_of": "2026-10-27",
-  "price": 759.97,
+  "as_of": "2026-11-03",
+  "price": 752.1,
   "halt": false,
   "halt_reasons": [],
-  "fills_blocked": true,
+  "fills_blocked": false,
   "guardrails": {
     "hy_oas": {
       "available": true,
-      "latest_pct": 3.38,
-      "21d_change_pct": 0.58,
+      "latest_pct": 3.44,
+      "21d_change_pct": 0.2,
       "level_threshold_pct": 8.0,
       "jump_threshold_pct": 1.5,
       "blowout": false
     },
     "blackout": {
-      "active": true,
-      "reasons": [
-        "fomc_date"
-      ]
+      "active": false,
+      "reasons": []
     }
   },
   "rebaseline_alert": {
@@ -27,14 +25,14 @@
     "warning": "build_anchor_price/build_anchor_date not set in config -- cannot evaluate re-baseline"
   },
   "tranche1": {
-    "eligible": false,
+    "eligible": true,
     "weekly_deploy_pct": 0.25,
-    "last_fomc_date": "2026-10-27",
-    "reason": "fills_blocked"
+    "last_fomc_date": "2026-10-28",
+    "reason": "ok"
   },
   "tranche2": {
     "trailing_high_20d": 779.09,
-    "drawdown_from_high_pct": -2.45,
+    "drawdown_from_high_pct": -3.46,
     "eligible_rungs": [],
     "all_rungs": [
       {
@@ -54,18 +52,18 @@
         "deploy_pct": 0.25
       }
     ],
-    "reason": "fills_blocked"
+    "reason": "ok"
   },
   "tranche3": {
     "eligible": false,
     "deep_reserve_pct": 0.2,
     "regime": {
-      "vix": "calm",
+      "vix": "elevated",
       "credit": "widening",
       "spy_trend": "above",
       "regime_break": false
     },
-    "reason": "fills_blocked"
+    "reason": "no_regime_break"
   },
   "warnings": []
 }

@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_utc": "2026-11-04 01:34 UTC",
+  "generated_utc": "2026-11-05 01:41 UTC",
   "params": {
    "ext_threshold_pct": 30.0,
    "rally_lookback_days": 126,
@@ -18,12 +18,12 @@
   ]
  },
  "current": {
-  "as_of": "2026-11-02",
+  "as_of": "2026-11-03",
   "symbol": "SMH",
-  "close": 508.31,
-  "ma200": 520.06,
-  "ext_pct": -2.3,
-  "trail_6m_pct": 0.3,
+  "close": 518.52,
+  "ma200": 520.65,
+  "ext_pct": -0.4,
+  "trail_6m_pct": -0.8,
   "trigger_active": false,
   "regime_tag": "rising",
   "nearest_analogs": [
@@ -1203,7 +1203,7 @@
    "regime": "rising",
    "fwd_63d_pct": -6.79,
    "fwd_126d_pct": null,
-   "max_dd_pct": -16.33,
+   "max_dd_pct": -16.81,
    "complete": false,
    "path": [
     100.0,
@@ -1221,7 +1221,7 @@
     90.23,
     87.33,
     86.59,
-    85.88
+    83.19
    ]
   }
  ]

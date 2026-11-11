@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_utc": "2026-11-10 03:44 UTC",
+  "generated_utc": "2026-11-11 01:23 UTC",
   "params": {
    "ext_threshold_pct": 30.0,
    "rally_lookback_days": 126,
@@ -1222,7 +1222,7 @@
     87.33,
     86.59,
     76.07,
-    81.29
+    81.0
    ]
   }
  ]

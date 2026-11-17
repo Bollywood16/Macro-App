@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_utc": "2026-11-14 01:37 UTC",
+  "generated_utc": "2026-11-17 04:05 UTC",
   "params": {
    "ext_threshold_pct": 30.0,
    "rally_lookback_days": 126,
@@ -18,12 +18,12 @@
   ]
  },
  "current": {
-  "as_of": "2026-11-13",
+  "as_of": "2026-11-16",
   "symbol": "SMH",
-  "close": 486.75,
-  "ma200": 523.89,
-  "ext_pct": -7.1,
-  "trail_6m_pct": -12.5,
+  "close": 461.9,
+  "ma200": 524.18,
+  "ext_pct": -11.9,
+  "trail_6m_pct": -15.4,
   "trigger_active": false,
   "regime_tag": "rising",
   "nearest_analogs": [
@@ -44,12 +44,12 @@
     "max_dd_pct": -12.47
    },
    {
-    "date": "2023-06-13",
-    "symbol": "SMH",
+    "date": "2021-03-01",
+    "symbol": "SOX",
     "regime": "rising",
-    "ext_pct": 34.0,
-    "fwd_126d_pct": 9.7,
-    "max_dd_pct": -10.32
+    "ext_pct": 31.6,
+    "fwd_126d_pct": 8.44,
+    "max_dd_pct": -12.82
    }
   ]
  },
@@ -1222,7 +1222,8 @@
     87.33,
     86.59,
     76.07,
-    82.2
+    82.2,
+    77.86
    ]
   }
  ]

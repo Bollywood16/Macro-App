@@ -1,15 +1,15 @@
 {
   "ticker": "SPY",
-  "as_of": "2026-11-17",
-  "price": 739.95,
+  "as_of": "2026-11-24",
+  "price": 722.29,
   "halt": false,
   "halt_reasons": [],
   "fills_blocked": false,
   "guardrails": {
     "hy_oas": {
       "available": true,
-      "latest_pct": 3.23,
-      "21d_change_pct": 0.0,
+      "latest_pct": 3.76,
+      "21d_change_pct": 0.36,
       "level_threshold_pct": 8.0,
       "jump_threshold_pct": 1.5,
       "blowout": false
@@ -31,9 +31,14 @@
     "reason": "ok"
   },
   "tranche2": {
-    "trailing_high_20d": 773.09,
-    "drawdown_from_high_pct": -4.29,
-    "eligible_rungs": [],
+    "trailing_high_20d": 772.31,
+    "drawdown_from_high_pct": -6.48,
+    "eligible_rungs": [
+      {
+        "drawdown_pct": -0.05,
+        "deploy_pct": 0.1
+      }
+    ],
     "all_rungs": [
       {
         "drawdown_pct": -0.05,
@@ -60,7 +65,7 @@
     "regime": {
       "vix": "elevated",
       "credit": "widening",
-      "spy_trend": "above",
+      "spy_trend": "below",
       "regime_break": false
     },
     "reason": "no_regime_break"

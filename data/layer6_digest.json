@@ -1,7 +1,7 @@
 {
-  "generated_utc": "2026-11-24 06:14 UTC",
+  "generated_utc": "2026-11-25 04:58 UTC",
   "source": "top setups from data/scanner_digest.json, opportunity_score-ranked",
-  "scanner_digest_generated_utc": "2026-11-24 06:10 UTC",
+  "scanner_digest_generated_utc": "2026-11-25 04:56 UTC",
   "interval": "15m",
   "top_n": 5,
   "scanned_tickers": [],
